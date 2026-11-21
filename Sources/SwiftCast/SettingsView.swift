@@ -34,8 +34,11 @@ private final class SettingsViewState {
 }
 
 /// Settings, System Settings–style: General, then a page per plugin where it can be turned
-/// on and off and shows its own settings.
-struct SettingsView: View {
+/// on and off and shows its own settings. `SettingsWindowController` hosts `sidebar` and
+/// `detail` in the columns of an AppKit split view, which floats the sidebar as glass; a
+/// SwiftUI `NavigationSplitView` in a hosting controller doesn't.
+@MainActor
+struct SettingsView {
     @Bindable var settings: AppSettings
     /// Each gets a page, in registry order.
     let plugins: [any LauncherPlugin]
@@ -43,41 +46,56 @@ struct SettingsView: View {
     @Bindable private var state = SettingsViewState()
     @Bindable private var pluginState = PluginSettingsState()
 
-    var body: some View {
-        NavigationSplitView {
-            List(selection: $state.page) {
-                Label("General", systemImage: "gearshape")
-                    .tag(SettingsPage.general)
-                Section("Plugins") {
-                    ForEach(plugins.indices, id: \.self) { index in
-                        let plugin = plugins[index]
-                        Label {
-                            Text(plugin.name)
-                        } icon: {
-                            Self.image(for: plugin.icon)
-                        }
-                        .opacity(isEnabled(plugin) ? 1 : 0.5)
-                        .tag(SettingsPage.plugin(plugin.id))
-                    }
-                }
+    var sidebar: some View {
+        List(selection: $state.page) {
+            Label {
+                Text("General")
+            } icon: {
+                IconTile(icon: .symbol("gearshape.fill"), tint: .gray, size: 22)
             }
-            .navigationSplitViewColumnWidth(190)
-            .toolbar(removing: .sidebarToggle)
-        } detail: {
-            switch state.page ?? .general {
-            case .general:
-                generalPage
-            case .plugin(let id):
-                if let plugin = plugins.first(where: { $0.id == id }) {
-                    pluginPage(plugin)
+            .tag(SettingsPage.general)
+            Section("Plugins") {
+                ForEach(plugins.indices, id: \.self) { index in
+                    let plugin = plugins[index]
+                    Label {
+                        Text(plugin.name)
+                    } icon: {
+                        IconTile(icon: plugin.icon, tint: Self.tint(for: plugin.id), size: 22)
+                    }
+                    .opacity(isEnabled(plugin) ? 1 : 0.5)
+                    .tag(SettingsPage.plugin(plugin.id))
                 }
             }
         }
-        .frame(width: 700, height: 560)
+        .listStyle(.sidebar)
+    }
+
+    @ViewBuilder
+    var detail: some View {
+        switch state.page ?? .general {
+        case .general:
+            generalPage
+        case .plugin(let id):
+            if let plugin = plugins.first(where: { $0.id == id }) {
+                pluginPage(plugin)
+            }
+        }
+    }
+
+    /// The shown page's name, for the window title.
+    var title: String {
+        switch state.page ?? .general {
+        case .general: "General"
+        case .plugin(let id): plugins.first { $0.id == id }?.name ?? "Settings"
+        }
     }
 
     private var generalPage: some View {
         Form {
+            PageHeader(title: "SwiftCast", subtitle: Self.version) {
+                Image(nsImage: NSApp.applicationIconImage).resizable().frame(width: 64, height: 64)
+            }
+
             Section {
                 LabeledContent("Open SwiftCast") {
                     HStack {
@@ -92,7 +110,7 @@ struct SettingsView: View {
                     }
                 }
                 if let shortcutError = state.shortcutError {
-                    Text(shortcutError).font(.callout).foregroundStyle(.red)
+                    ErrorText(shortcutError)
                 }
                 Picker("Keep last search for", selection: $settings.restoreInterval) {
                     ForEach(Self.restoreChoices, id: \.seconds) { choice in
@@ -106,7 +124,7 @@ struct SettingsView: View {
                     set: { setLaunchAtLogin($0) }
                 ))
                 if let loginError = state.loginError {
-                    Text(loginError).font(.callout).foregroundStyle(.red)
+                    ErrorText(loginError)
                 }
             }
 
@@ -121,14 +139,12 @@ struct SettingsView: View {
             }
 
             Section("About") {
-                LabeledContent("Version", value: Self.version)
-                LabeledContent("Source") {
+                LabeledContent("Source code") {
                     Link("github.com/inhzus/swiftcast", destination: URL(string: "https://github.com/inhzus/swiftcast")!)
                 }
             }
         }
         .formStyle(.grouped)
-        .navigationTitle("General")
         .alert("Clear search history?", isPresented: $state.confirmingClear) {
             Button("Clear", role: .destructive) {
                 actions.clearSearchHistory()
@@ -141,19 +157,18 @@ struct SettingsView: View {
 
     private func pluginPage(_ plugin: any LauncherPlugin) -> some View {
         Form {
+            PageHeader(title: plugin.name, subtitle: plugin.summary) {
+                IconTile(icon: plugin.icon, tint: Self.tint(for: plugin.id), size: 64)
+            }
             Section {
-                Toggle(isOn: Binding(
+                Toggle("Enabled", isOn: Binding(
                     get: { isEnabled(plugin) },
                     set: { setEnabled($0, plugin.id) }
-                )) {
-                    Text("Enabled")
-                    Text(plugin.summary)
-                }
+                ))
             }
             PluginSettingsSections(plugin: plugin, state: pluginState)
         }
         .formStyle(.grouped)
-        .navigationTitle(plugin.name)
     }
 
     private func isEnabled(_ plugin: any LauncherPlugin) -> Bool {
@@ -168,12 +183,11 @@ struct SettingsView: View {
         }
     }
 
-    @ViewBuilder
-    private static func image(for icon: ResultIcon) -> some View {
-        switch icon {
-        case .file(let path): Image(nsImage: IconCache.shared.icon(for: path)).resizable().frame(width: 20, height: 20)
-        case .symbol(let name): Image(systemName: name)
-        }
+    /// A plugin's tile color, the same on every launch for the same id.
+    private static func tint(for id: String) -> Color {
+        let palette: [Color] = [.blue, .indigo, .purple, .pink, .orange, .green, .teal]
+        let hash = id.unicodeScalars.reduce(0) { ($0 &* 31 &+ Int($1.value)) & 0xFFFF }
+        return palette[hash % palette.count]
     }
 
     private func setShortcut(_ shortcut: Shortcut) {
@@ -203,5 +217,71 @@ struct SettingsView: View {
         let info = Bundle.main.infoDictionary
         guard let short = info?["CFBundleShortVersionString"] as? String else { return "Development build" }
         return "\(short) (\(info?["CFBundleVersion"] as? String ?? "?"))"
+    }
+}
+
+/// A System Settings–style icon: a white symbol on a colored rounded square, or an app's own
+/// icon, which already has its shape.
+struct IconTile: View {
+    let icon: ResultIcon
+    let tint: Color
+    let size: CGFloat
+
+    var body: some View {
+        switch icon {
+        case .file(let path):
+            Image(nsImage: IconCache.shared.icon(for: path))
+                .resizable()
+                .frame(width: size, height: size)
+        case .symbol(let name):
+            RoundedRectangle(cornerRadius: size * 0.27, style: .continuous)
+                .fill(tint.gradient)
+                .frame(width: size, height: size)
+                .overlay {
+                    Image(systemName: name)
+                        .font(.system(size: size * 0.55, weight: .medium))
+                        .foregroundStyle(.white)
+                }
+                // App icons are drawn inset in their canvas; match their visual size.
+                .padding(size * 0.08)
+                .frame(width: size, height: size)
+        }
+    }
+}
+
+/// The card at the top of a page with its large icon, title and subtitle.
+private struct PageHeader<Icon: View>: View {
+    let title: String
+    let subtitle: String
+    @ViewBuilder let icon: Icon
+
+    var body: some View {
+        Section {
+            VStack(spacing: 6) {
+                icon
+                Text(title).font(.title2.bold())
+                Text(subtitle)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 8)
+        }
+    }
+}
+
+/// An inline error under the control it's about.
+private struct ErrorText: View {
+    let message: String
+
+    init(_ message: String) {
+        self.message = message
+    }
+
+    var body: some View {
+        Label(message, systemImage: "exclamationmark.triangle.fill")
+            .font(.callout)
+            .foregroundStyle(.red)
     }
 }
