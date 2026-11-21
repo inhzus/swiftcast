@@ -53,7 +53,12 @@ struct SettingsView: View {
                         Text(choice.label).tag(choice.seconds)
                     }
                 }
-                Toggle("Launch at login", isOn: Binding(get: { state.launchAtLogin }, set: setLaunchAtLogin))
+                // A closure, not `set: setLaunchAtLogin`: Swift 6.3 crashes emitting the
+                // reabstraction thunk for a method reference here.
+                Toggle("Launch at login", isOn: Binding(
+                    get: { state.launchAtLogin },
+                    set: { setLaunchAtLogin($0) }
+                ))
                 if let loginError = state.loginError {
                     Text(loginError).font(.callout).foregroundStyle(.red)
                 }
