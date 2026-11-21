@@ -1,17 +1,17 @@
 import Foundation
 
 /// The result of a math query, ready to show and copy.
-public struct Calculation: Hashable, Sendable {
+struct Calculation: Hashable, Sendable {
     /// The query as typed, trimmed.
-    public let expression: String
+    let expression: String
     /// The value in its kind's base unit (bytes, metres, seconds…), or the plain number.
-    public let value: Double
+    let value: Double
     /// Formatted for display, with grouping separators (e.g. "1,536 MB").
-    public let display: String
+    let display: String
     /// The same without grouping separators, for the clipboard.
-    public let copyText: String
+    let copyText: String
     /// How ambiguous unit words were read, e.g. "B = billion"; `nil` when none were.
-    public let note: String?
+    let note: String?
 }
 
 /// Evaluates quick-math queries: arithmetic, a few functions, percentages, and units.
@@ -22,8 +22,8 @@ public struct Calculation: Hashable, Sendable {
 ///
 /// The pipeline is lex → split off the target → resolve unit words → parse → format. Only
 /// the unit tables in `Units/` know about particular units.
-public enum Calculator {
-    public static func evaluate(_ input: String) -> Calculation? {
+enum Calculator {
+    static func evaluate(_ input: String) -> Calculation? {
         evaluate(input, registry: .builtIn)
     }
 

@@ -1,18 +1,22 @@
-import AppKit
+import Foundation
 import SwiftCastCore
+import SwiftCastPluginKit
 
-/// A row in the launcher: a quick-math result or an app.
-enum LauncherItem: Hashable {
-    case calculation(Calculation)
-    case app(SearchResult)
+/// A row in the launcher, with the plugin it came from.
+struct LauncherItem: Hashable {
+    let pluginID: String
+    let result: ResultItem
 }
 
 @MainActor
 final class LauncherViewModel {
-    /// Most apps shown for a query.
-    static let resultLimit = 20
-    /// Most rows shown: the apps, plus a calculation above them.
-    static let itemLimit = resultLimit + 1
+    /// Every plugin, enabled or not.
+    let plugins: [any LauncherPlugin]
+    /// Plugins asked for results; the rest are turned off in Settings.
+    var enabledIDs: Set<String>
+    /// Most rows shown: every plugin's limit added up, so turning plugins on never needs
+    /// more rows.
+    let itemLimit: Int
 
     var query = "" {
         didSet {
@@ -31,13 +35,16 @@ final class LauncherViewModel {
     var onResultsChange: () -> Void = {}
     var onSelectionChange: () -> Void = {}
     var onDismiss: () -> Void = {}
-    private let engine: SearchEngine
+    private let pluginsByID: [String: any LauncherPlugin]
     private let history: QueryHistory
     private var historyCursor = HistoryCursor()
 
-    init(engine: SearchEngine, history: QueryHistory) {
-        self.engine = engine
+    init(plugins: [any LauncherPlugin], history: QueryHistory) {
+        self.plugins = plugins
+        enabledIDs = Set(plugins.map(\.id))
         self.history = history
+        itemLimit = plugins.map(\.resultLimit).reduce(0, +)
+        pluginsByID = Dictionary(uniqueKeysWithValues: plugins.map { ($0.id, $0) })
     }
 
     /// The user typed: any history browsing ends, so ↑/↓ move through results again.
@@ -99,43 +106,36 @@ final class LauncherViewModel {
         selection = min(max(selection + delta, 0), items.count - 1)
     }
 
-    /// Opens the selected app, or copies the selected calculation's result.
-    func launchSelected() {
-        if selectedItem != nil { history.record(query) }
-        switch selectedItem {
-        case .calculation(let calculation):
-            onDismiss()
-            NSPasteboard.general.clearContents()
-            NSPasteboard.general.setString(calculation.copyText, forType: .string)
-        case .app(let result):
-            // Hide first so the panel disappears without waiting on the launch.
-            onDismiss()
-            NSWorkspace.shared.openApplication(
-                at: result.app.url,
-                configuration: NSWorkspace.OpenConfiguration(),
-                completionHandler: nil
-            )
-            engine.usage.increment(result.app.id)
-        case nil:
-            break
-        }
+    /// The plugin that `item` came from.
+    func plugin(for item: LauncherItem) -> (any LauncherPlugin)? {
+        pluginsByID[item.pluginID]
     }
 
-    func revealSelected() {
-        guard case .app(let result) = selectedItem else { return }
+    /// ↩: runs the selected row's first action.
+    func performPrimary() {
+        perform(actionAt: 0)
+    }
+
+    /// ⌘↩: runs the selected row's second action, if it has one.
+    func performSecondary() {
+        perform(actionAt: 1)
+    }
+
+    private func perform(actionAt index: Int) {
+        guard let item = selectedItem, item.result.actions.indices.contains(index) else { return }
+        let action = item.result.actions[index]
         history.record(query)
+        // Hide first so the panel disappears without waiting on the effect.
         onDismiss()
-        NSWorkspace.shared.activateFileViewerSelecting([result.app.url])
-    }
-
-    /// Text that tells `app` apart from other apps with the same name, if any.
-    func detail(for app: AppEntry) -> String? {
-        engine.detail(for: app)
+        EffectRunner.run(action.effect)
+        plugin(for: item)?.didPerform(action, on: item.result)
     }
 
     private func makeItems() -> [LauncherItem] {
-        let apps = engine.results(for: query, limit: Self.resultLimit).map(LauncherItem.app)
-        guard let calculation = Calculator.evaluate(query) else { return apps }
-        return [.calculation(calculation)] + apps
+        plugins.filter { enabledIDs.contains($0.id) }.flatMap { plugin in
+            plugin.results(for: query).prefix(plugin.resultLimit).map {
+                LauncherItem(pluginID: plugin.id, result: $0)
+            }
+        }
     }
 }

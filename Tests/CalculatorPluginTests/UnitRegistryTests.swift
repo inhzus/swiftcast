@@ -1,5 +1,5 @@
 import Testing
-@testable import SwiftCastCore
+@testable import CalculatorPlugin
 
 struct UnitRegistryTests {
     @Test func builtInTablesHaveNoProblems() {

@@ -1,5 +1,5 @@
 import Testing
-@testable import SwiftCastCore
+@testable import AppsPlugin
 
 struct FuzzyMatcherTests {
     private func score(_ q: String, _ c: String) -> Int? {

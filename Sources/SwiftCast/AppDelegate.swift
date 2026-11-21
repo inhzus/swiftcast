@@ -1,21 +1,21 @@
 import AppKit
 import SwiftCastCore
+import SwiftCastPluginKit
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private let settings = AppSettings()
-    private let engine = SearchEngine(usage: UsageStore())
+    private let plugins = PluginRegistry.makePlugins()
     private let queryHistory = QueryHistory()
-    private lazy var model = LauncherViewModel(engine: engine, history: queryHistory)
+    private lazy var model = LauncherViewModel(plugins: plugins, history: queryHistory)
     private lazy var launcher = LauncherViewController(model: model)
     private lazy var settingsWindow = SettingsWindowController { [unowned self] in
-        SettingsView(settings: settings, actions: SettingsActions(
+        SettingsView(settings: settings, plugins: plugins, actions: SettingsActions(
             setShortcut: { [unowned self] in setShortcut($0) },
             setRecording: { [unowned self] recording in
                 if recording { hotKey = nil } else { registerHotKey(settings.shortcut) }
             },
-            clearHistory: { [unowned self] in
-                engine.usage.clear()
+            clearSearchHistory: { [unowned self] in
                 queryHistory.clear()
                 model.refresh()
             }
@@ -25,18 +25,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var statusItem: NSStatusItem?
     private var openMenuItem: NSMenuItem?
     private var hotKey: HotKey?
-    private var isIndexing = false
-    /// Set when the search folders change mid-scan, so another scan follows.
-    private var needsReindex = false
-    private var lastIndexed: Date?
-    private var didPrewarm = false
+    /// The startup sequence has run; until then it preloads icons itself.
+    private var didActivate = false
+    /// Plugins whose `activate` has been called. A plugin that starts disabled is activated
+    /// when first enabled.
+    private var activatedIDs: Set<String> = []
     /// When the panel was last hidden; a reopen soon after brings back the last search.
     private var lastHidden: Date?
     /// The panel is fading out; it's still visible until that finishes.
     private var isHiding = false
-
-    /// Rescans on panel open only when the last scan is older than this.
-    private static let rescanInterval: TimeInterval = 60
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         PerfLog.start()
@@ -46,11 +43,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         if !registerHotKey(settings.shortcut) {
             NSLog("SwiftCast: failed to register \(settings.shortcut.displayString) hotkey (already in use?)")
         }
-        settings.onFoldersChange = { [weak self] in
-            self?.lastIndexed = nil
-            self?.reindex()
-        }
-        reindex()
+        activatePlugins()
 
         if CommandLine.arguments.contains("--show") {
             showPanel()
@@ -103,7 +96,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         isHiding = false
         PerfLog.measure("orderFront") { panel.makeKeyAndOrderFront(nil) }
         launcher.animateIn()
-        DispatchQueue.main.async { [weak self] in self?.reindex() }
+        DispatchQueue.main.async { [weak self] in
+            for plugin in self?.enabledPlugins ?? [] { plugin.panelDidShow() }
+        }
     }
 
     /// Fades the panel out, then orders it out. `lastHidden` is taken now, so the restore
@@ -179,38 +174,51 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         item.keyEquivalentModifierMask = mask
     }
 
-    // MARK: - Indexing
+    // MARK: - Plugins
 
-    private var indexer: AppIndexer {
-        AppIndexer(roots: AppIndexer.defaultRoots + settings.extraFolders)
+    private var enabledPlugins: [any LauncherPlugin] {
+        plugins.filter { !settings.disabledPlugins.contains($0.id) }
     }
 
-    private func reindex() {
-        guard !isIndexing else {
-            needsReindex = true
-            return
-        }
-        if let lastIndexed, Date().timeIntervalSince(lastIndexed) < Self.rescanInterval { return }
-        isIndexing = true
-        needsReindex = false
-        let indexer = indexer
+    private lazy var pluginContext = PluginContext { [weak self] in self?.pluginResultsChanged() }
+
+    /// Activates the enabled plugins, renders their icons, then prewarms the panel.
+    private func activatePlugins() {
+        model.enabledIDs = Set(enabledPlugins.map(\.id))
+        settings.onPluginsChange = { [weak self] in self?.pluginsToggled() }
         Task {
-            let apps = await Task.detached(priority: .utility) { indexer.scan() }.value
-            if apps != engine.apps {
-                engine.update(apps: apps)
-                model.refresh()
-            }
-            await IconCache.shared.preload(apps.map(\.url.path))
-            lastIndexed = Date()
-            isIndexing = false
-            if needsReindex {
-                lastIndexed = nil
-                reindex()
-            } else if !didPrewarm {
-                didPrewarm = true
-                prewarm()
-            }
+            for plugin in enabledPlugins { await activate(plugin) }
+            model.refresh()
+            await preloadIcons()
+            didActivate = true
+            prewarm()
         }
+    }
+
+    private func activate(_ plugin: any LauncherPlugin) async {
+        guard activatedIDs.insert(plugin.id).inserted else { return }
+        await plugin.activate(pluginContext)
+    }
+
+    /// A plugin was turned on or off in Settings.
+    private func pluginsToggled() {
+        let enabled = enabledPlugins
+        model.enabledIDs = Set(enabled.map(\.id))
+        model.refresh()
+        guard didActivate else { return }
+        Task {
+            for plugin in enabled { await activate(plugin) }
+            await preloadIcons()
+        }
+    }
+
+    private func pluginResultsChanged() {
+        model.refresh()
+        if didActivate { Task { await preloadIcons() } }
+    }
+
+    private func preloadIcons() async {
+        await IconCache.shared.preload(enabledPlugins.flatMap { $0.iconPaths() })
     }
 
     // MARK: - Menus

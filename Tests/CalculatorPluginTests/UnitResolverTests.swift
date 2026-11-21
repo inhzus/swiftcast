@@ -1,5 +1,5 @@
 import Testing
-@testable import SwiftCastCore
+@testable import CalculatorPlugin
 
 /// Pins the one rule for ambiguous words: an anchored category wins, otherwise the default.
 struct UnitResolverTests {

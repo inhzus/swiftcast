@@ -3,7 +3,7 @@ import Foundation
 /// Persists how often and how recently each app was launched, to boost the apps the user
 /// reaches for now (frecency). Old launches fade with a one-week half-life.
 @MainActor
-public final class UsageStore {
+final class UsageStore {
     struct Record: Codable, Equatable {
         var count: Int
         var lastUsed: Date
@@ -11,24 +11,24 @@ public final class UsageStore {
 
     /// Highest boost an app can get; below the 100-point gap between match tiers, so usage
     /// reorders apps within a tier but never lifts a weaker kind of match over a stronger one.
-    public static let maxBoost = 60
+    static let maxBoost = 60
     static let halfLife: TimeInterval = 7 * 24 * 60 * 60
 
     private let defaults: UserDefaults
     private let key = "launchHistory"
     private var records: [String: Record]
 
-    public init(defaults: UserDefaults = .standard) {
+    init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         records = defaults.data(forKey: key)
             .flatMap { try? JSONDecoder().decode([String: Record].self, from: $0) } ?? [:]
     }
 
-    public func count(for id: String) -> Int {
+    func count(for id: String) -> Int {
         records[id]?.count ?? 0
     }
 
-    public func increment(_ id: String, at now: Date = Date()) {
+    func increment(_ id: String, at now: Date = Date()) {
         var record = records[id] ?? Record(count: 0, lastUsed: now)
         record.count += 1
         record.lastUsed = max(record.lastUsed, now)
@@ -39,14 +39,14 @@ public final class UsageStore {
     }
 
     /// Forgets all launch history.
-    public func clear() {
+    func clear() {
         records = [:]
         defaults.removeObject(forKey: key)
     }
 
     /// Up to `maxBoost` points: grows logarithmically with launch count and halves for every
     /// week since the last launch. Zero for apps never launched.
-    public func boost(for id: String, at now: Date = Date()) -> Int {
+    func boost(for id: String, at now: Date = Date()) -> Int {
         guard let record = records[id] else { return 0 }
         let age = max(now.timeIntervalSince(record.lastUsed), 0)
         let decay = pow(0.5, age / Self.halfLife)

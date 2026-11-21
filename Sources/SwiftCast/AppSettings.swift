@@ -2,8 +2,8 @@ import Foundation
 import Observation
 import SwiftCastCore
 
-/// User preferences, persisted in `UserDefaults`. Launch at login isn't here: it lives in
-/// `SMAppService`, which is the source of truth for it.
+/// App-wide preferences (plugins keep their own), persisted in `UserDefaults`. Launch at
+/// login isn't here: it lives in `SMAppService`, which is the source of truth for it.
 @MainActor
 @Observable
 final class AppSettings {
@@ -19,22 +19,23 @@ final class AppSettings {
         didSet { defaults.set(restoreInterval, forKey: "restoreInterval") }
     }
 
-    /// Folders searched for apps on top of `AppIndexer.defaultRoots`.
-    var extraFolders: [URL] {
+    /// IDs of plugins the user turned off. Stored as the ones turned off so that a newly
+    /// added plugin starts on.
+    var disabledPlugins: Set<String> {
         didSet {
-            defaults.set(extraFolders.map(\.path), forKey: "searchFolders")
-            onFoldersChange()
+            defaults.set(disabledPlugins.sorted(), forKey: "disabledPlugins")
+            onPluginsChange()
         }
     }
 
-    @ObservationIgnored var onFoldersChange: () -> Void = {}
+    @ObservationIgnored var onPluginsChange: () -> Void = {}
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         shortcut = defaults.data(forKey: "hotKey")
             .flatMap { try? JSONDecoder().decode(Shortcut.self, from: $0) } ?? .default
         restoreInterval = defaults.object(forKey: "restoreInterval") as? TimeInterval ?? 60
-        extraFolders = (defaults.stringArray(forKey: "searchFolders") ?? []).map { URL(filePath: $0) }
+        disabledPlugins = Set(defaults.stringArray(forKey: "disabledPlugins") ?? [])
     }
 
     private func save(_ value: some Encodable, forKey key: String) {

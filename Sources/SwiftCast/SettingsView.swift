@@ -1,6 +1,7 @@
 import AppKit
 import ServiceManagement
 import SwiftCastCore
+import SwiftCastPluginKit
 import SwiftUI
 
 /// What the Settings window asks the app to do; supplied by `AppDelegate`.
@@ -10,7 +11,13 @@ struct SettingsActions {
     var setShortcut: (Shortcut) -> Bool
     /// Suspends the global hotkey while the recorder listens, and restores it afterwards.
     var setRecording: (Bool) -> Void
-    var clearHistory: () -> Void
+    var clearSearchHistory: () -> Void
+}
+
+/// A page in the Settings sidebar.
+enum SettingsPage: Hashable {
+    case general
+    case plugin(String)
 }
 
 /// The window's own UI state. An observable object rather than `@State`, which is a macro
@@ -18,6 +25,7 @@ struct SettingsActions {
 @MainActor
 @Observable
 private final class SettingsViewState {
+    var page: SettingsPage? = .general
     var shortcutError: String?
     var launchAtLogin = SMAppService.mainApp.status == .enabled
     var loginError: String?
@@ -25,14 +33,51 @@ private final class SettingsViewState {
     var historyCleared = false
 }
 
+/// Settings, System Settings–style: General, then a page per plugin where it can be turned
+/// on and off and shows its own settings.
 struct SettingsView: View {
     @Bindable var settings: AppSettings
+    /// Each gets a page, in registry order.
+    let plugins: [any LauncherPlugin]
     let actions: SettingsActions
     @Bindable private var state = SettingsViewState()
 
     var body: some View {
+        NavigationSplitView {
+            List(selection: $state.page) {
+                Label("General", systemImage: "gearshape")
+                    .tag(SettingsPage.general)
+                Section("Plugins") {
+                    ForEach(plugins.indices, id: \.self) { index in
+                        let plugin = plugins[index]
+                        Label {
+                            Text(plugin.name)
+                        } icon: {
+                            Self.image(for: plugin.icon)
+                        }
+                        .opacity(isEnabled(plugin) ? 1 : 0.5)
+                        .tag(SettingsPage.plugin(plugin.id))
+                    }
+                }
+            }
+            .navigationSplitViewColumnWidth(190)
+            .toolbar(removing: .sidebarToggle)
+        } detail: {
+            switch state.page ?? .general {
+            case .general:
+                generalPage
+            case .plugin(let id):
+                if let plugin = plugins.first(where: { $0.id == id }) {
+                    pluginPage(plugin)
+                }
+            }
+        }
+        .frame(width: 700, height: 560)
+    }
+
+    private var generalPage: some View {
         Form {
-            Section("General") {
+            Section {
                 LabeledContent("Open SwiftCast") {
                     HStack {
                         ShortcutRecorder(
@@ -64,39 +109,13 @@ struct SettingsView: View {
                 }
             }
 
-            Section {
-                ForEach(AppIndexer.defaultRoots, id: \.self) { folder in
-                    Label(Self.displayPath(folder), systemImage: "folder")
-                        .foregroundStyle(.secondary)
-                }
-                ForEach(settings.extraFolders, id: \.self) { folder in
-                    HStack {
-                        Label(Self.displayPath(folder), systemImage: "folder")
-                        Spacer()
-                        Button {
-                            settings.extraFolders.removeAll { $0 == folder }
-                        } label: {
-                            Image(systemName: "minus.circle.fill").foregroundStyle(.secondary)
-                        }
-                        .buttonStyle(.borderless)
-                        .help("Stop searching this folder")
-                    }
-                }
-                Button("Add Folder…", action: addFolders)
-            } header: {
-                Text("Search")
-            } footer: {
-                Text("Apps are found up to three folders deep.")
-                    .font(.callout).foregroundStyle(.secondary)
-            }
-
-            Section("Usage") {
+            Section("History") {
                 LabeledContent {
                     Button(state.historyCleared ? "Cleared" : "Clear…") { state.confirmingClear = true }
                         .disabled(state.historyCleared)
                 } label: {
-                    Text("Usage history")
-                    Text("Ranks the apps you open most, lists recent ones, and remembers your searches.")
+                    Text("Search history")
+                    Text("Searches you acted on, which ↑ and ↓ step through in an empty field.")
                 }
             }
 
@@ -108,14 +127,51 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .frame(width: 480, height: 680)
-        .alert("Clear usage history?", isPresented: $state.confirmingClear) {
+        .navigationTitle("General")
+        .alert("Clear search history?", isPresented: $state.confirmingClear) {
             Button("Clear", role: .destructive) {
-                actions.clearHistory()
+                actions.clearSearchHistory()
                 state.historyCleared = true
             }
         } message: {
-            Text("Recent apps and the ranking boost for frequently used apps start over.")
+            Text("↑ and ↓ will have no past searches to step through.")
+        }
+    }
+
+    private func pluginPage(_ plugin: any LauncherPlugin) -> some View {
+        Form {
+            Section {
+                Toggle(isOn: Binding(
+                    get: { isEnabled(plugin) },
+                    set: { setEnabled($0, plugin.id) }
+                )) {
+                    Text("Enabled")
+                    Text(plugin.summary)
+                }
+            }
+            plugin.settingsView()
+        }
+        .formStyle(.grouped)
+        .navigationTitle(plugin.name)
+    }
+
+    private func isEnabled(_ plugin: any LauncherPlugin) -> Bool {
+        !settings.disabledPlugins.contains(plugin.id)
+    }
+
+    private func setEnabled(_ enabled: Bool, _ id: String) {
+        if enabled {
+            settings.disabledPlugins.remove(id)
+        } else {
+            settings.disabledPlugins.insert(id)
+        }
+    }
+
+    @ViewBuilder
+    private static func image(for icon: ResultIcon) -> some View {
+        switch icon {
+        case .file(let path): Image(nsImage: IconCache.shared.icon(for: path)).resizable().frame(width: 20, height: 20)
+        case .symbol(let name): Image(systemName: name)
         }
     }
 
@@ -136,27 +192,11 @@ struct SettingsView: View {
         state.launchAtLogin = service.status == .enabled
     }
 
-    private func addFolders() {
-        let panel = NSOpenPanel()
-        panel.canChooseDirectories = true
-        panel.canChooseFiles = false
-        panel.allowsMultipleSelection = true
-        panel.prompt = "Add"
-        panel.message = "Choose folders to search for apps"
-        guard panel.runModal() == .OK else { return }
-        let known = Set((AppIndexer.defaultRoots + settings.extraFolders).map(\.standardizedFileURL))
-        settings.extraFolders += panel.urls.filter { !known.contains($0.standardizedFileURL) }
-    }
-
     /// Choices for how long a closed panel keeps its search.
     private static let restoreChoices: [(label: String, seconds: TimeInterval)] = [
         ("Never", 0), ("15 seconds", 15), ("30 seconds", 30), ("1 minute", 60),
         ("2 minutes", 120), ("5 minutes", 300), ("10 minutes", 600),
     ]
-
-    private static func displayPath(_ url: URL) -> String {
-        (url.path as NSString).abbreviatingWithTildeInPath
-    }
 
     private static var version: String {
         let info = Bundle.main.infoDictionary

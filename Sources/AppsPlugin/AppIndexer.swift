@@ -1,23 +1,23 @@
 import Foundation
 
 /// Scans well-known directories for `.app` bundles.
-public struct AppIndexer: Sendable {
-    public static let defaultRoots: [URL] = [
+struct AppIndexer: Sendable {
+    static let defaultRoots: [URL] = [
         URL(filePath: "/Applications"),
         URL(filePath: "/System/Applications"),
         FileManager.default.homeDirectoryForCurrentUser.appending(path: "Applications"),
     ]
 
-    public static let defaultExtraApps: [URL] = [
+    static let defaultExtraApps: [URL] = [
         URL(filePath: "/System/Library/CoreServices/Finder.app"),
     ]
 
-    public var roots: [URL]
-    public var extraApps: [URL]
+    var roots: [URL]
+    var extraApps: [URL]
     /// How many directory levels below a root are searched for apps.
-    public var maxDepth: Int
+    var maxDepth: Int
 
-    public init(
+    init(
         roots: [URL] = AppIndexer.defaultRoots,
         extraApps: [URL] = AppIndexer.defaultExtraApps,
         maxDepth: Int = 3
@@ -29,7 +29,7 @@ public struct AppIndexer: Sendable {
 
     /// Returns all apps found, de-duplicated by bundle ID (falling back to path).
     /// Earlier roots win when the same app appears more than once.
-    public func scan() -> [AppEntry] {
+    func scan() -> [AppEntry] {
         let fm = FileManager.default
         var seen = Set<String>()
         var entries: [AppEntry] = []

@@ -23,7 +23,9 @@ built for latency, has no dependencies, and needs no special permissions.
 - **Search history.** With the field empty, ↑/↓ steps through past searches. Reopen within a
   minute and your last search is still there (configurable).
 - **Native look.** Liquid Glass throughout.
-- **Settings** (⌘,): global shortcut, launch at login, extra folders to search, clear history.
+- **Settings** (⌘,): global shortcut, launch at login and search history under General; each
+  plugin has its own page, where it can be turned off (Applications also has extra folders
+  to search and its launch history).
 - **No Accessibility permission.** The global shortcut uses the system hotkey API.
 
 ### Quick math
@@ -104,9 +106,23 @@ open build/SwiftCast.app --args --show
 `--show` opens the launcher at startup and `--settings` opens Settings. Set
 `SWIFTCAST_PERF=1` to log open and keystroke latency to stderr.
 
-The code is split into `SwiftCastCore` (search, ranking, calculator; no UI, fully tested)
-and `SwiftCast` (the AppKit app). Units for quick math live in tables under
-`Sources/SwiftCastCore/Calculator/Units/`.
+Every feature is a plugin, a SwiftPM target with a clear border:
+
+| Target | What it is | May depend on |
+| --- | --- | --- |
+| `SwiftCastPluginKit` | The plugin contract: `LauncherPlugin`, `ResultItem`, `Effect` | system frameworks |
+| `AppsPlugin` | App search: indexing, fuzzy matching, frecency, search folders | `SwiftCastPluginKit` |
+| `CalculatorPlugin` | Quick math | `SwiftCastPluginKit` |
+| `SwiftCastCore` | Host logic: search history, shortcuts | system frameworks |
+| `SwiftCast` | The AppKit app: panel, hotkey, settings window | all of the above |
+
+Plugins return rows and their actions as values; the app draws the rows and carries out
+the actions (open, reveal, copy), so plugins never touch the panel. A plugin can't import
+the app or another plugin. Each plugin gets a page in Settings with an on/off switch, plus
+whatever `settingsView()` returns; a disabled plugin is never asked for results. To add one,
+create a target that depends on `SwiftCastPluginKit`, implement `LauncherPlugin`, and list it
+in `Sources/SwiftCast/PluginRegistry.swift`. Units for quick math live in tables under
+`Sources/CalculatorPlugin/Units/`.
 
 The icon is drawn by `scripts/make-icon.swift`; run `scripts/make-icon.sh` to regenerate
 `Resources/AppIcon.icns`.
