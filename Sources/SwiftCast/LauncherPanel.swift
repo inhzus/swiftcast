@@ -6,6 +6,7 @@ final class LauncherPanel: NSPanel {
     static let width: CGFloat = 680
 
     var onCancel: () -> Void = {}
+    var onSettings: () -> Void = {}
 
     init(content: NSView) {
         super.init(
@@ -49,11 +50,15 @@ final class LauncherPanel: NSPanel {
         onCancel()
     }
 
-    /// Edit commands for the search field, and ⌘Q. These normally come from the main menu,
+    /// Edit commands for the search field, ⌘, and ⌘Q. These normally come from the main menu,
     /// which an accessory app's non-activating panel never gets to use.
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
         let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
         if event.type == .keyDown, flags == .command {
+            if event.charactersIgnoringModifiers == "," {
+                onSettings()
+                return true
+            }
             let action: Selector? = switch event.charactersIgnoringModifiers {
             case "a": #selector(NSText.selectAll(_:))
             case "c": #selector(NSText.copy(_:))

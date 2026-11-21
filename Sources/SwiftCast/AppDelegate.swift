@@ -1,18 +1,31 @@
 import AppKit
-import Carbon.HIToolbox
-import ServiceManagement
 import SwiftCastCore
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
-    private let indexer = AppIndexer()
+    private let settings = AppSettings()
     private let engine = SearchEngine(usage: UsageStore())
     private lazy var model = LauncherViewModel(engine: engine)
     private lazy var launcher = LauncherViewController(model: model)
+    private lazy var settingsWindow = SettingsWindowController { [unowned self] in
+        SettingsView(settings: settings, actions: SettingsActions(
+            setShortcut: { [unowned self] in setShortcut($0) },
+            setRecording: { [unowned self] recording in
+                if recording { hotKey = nil } else { registerHotKey(settings.shortcut) }
+            },
+            clearHistory: { [unowned self] in
+                engine.usage.clear()
+                model.refresh()
+            }
+        ))
+    }
     private var panel: LauncherPanel?
     private var statusItem: NSStatusItem?
+    private var openMenuItem: NSMenuItem?
     private var hotKey: HotKey?
     private var isIndexing = false
+    /// Set when the search folders change mid-scan, so another scan follows.
+    private var needsReindex = false
     private var lastIndexed: Date?
     private var didPrewarm = false
 
@@ -22,17 +35,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         PerfLog.start()
         setupPanel()
+        setupMainMenu()
         setupStatusItem()
-        hotKey = HotKey(keyCode: kVK_Space, modifiers: cmdKey) { [weak self] in
-            self?.togglePanel()
+        if !registerHotKey(settings.shortcut) {
+            NSLog("SwiftCast: failed to register \(settings.shortcut.displayString) hotkey (already in use?)")
         }
-        if hotKey == nil {
-            NSLog("SwiftCast: failed to register ⌘Space hotkey (already in use?)")
+        settings.onFoldersChange = { [weak self] in
+            self?.lastIndexed = nil
+            self?.reindex()
         }
         reindex()
 
         if CommandLine.arguments.contains("--show") {
             showPanel()
+        }
+        if CommandLine.arguments.contains("--settings") {
+            showSettings()
         }
     }
 
@@ -52,6 +70,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         panel.setHeight(launcher.view.frame.height)
         panel.delegate = self
         panel.onCancel = { [weak self] in self?.hidePanel() }
+        panel.onSettings = { [weak self] in
+            self?.hidePanel()
+            self?.showSettings()
+        }
         self.panel = panel
     }
 
@@ -103,12 +125,58 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         hidePanel()
     }
 
+    // MARK: - Hotkey and settings
+
+    @objc private func showSettings() {
+        settingsWindow.show()
+    }
+
+    /// Registers `shortcut` and saves it; on failure the previous shortcut stays registered.
+    private func setShortcut(_ shortcut: Shortcut) -> Bool {
+        guard registerHotKey(shortcut) else {
+            registerHotKey(settings.shortcut)
+            return false
+        }
+        settings.shortcut = shortcut
+        return true
+    }
+
+    @discardableResult
+    private func registerHotKey(_ shortcut: Shortcut) -> Bool {
+        // Release the old hotkey first: its handler fires for any SwiftCast hotkey.
+        hotKey = nil
+        hotKey = HotKey(keyCode: shortcut.keyCode, modifiers: shortcut.modifiers) { [weak self] in
+            self?.togglePanel()
+        }
+        updateOpenMenuItem(shortcut)
+        return hotKey != nil
+    }
+
+    private func updateOpenMenuItem(_ shortcut: Shortcut) {
+        guard let item = openMenuItem else { return }
+        item.keyEquivalent = shortcut.menuKeyEquivalent ?? ""
+        var mask: NSEvent.ModifierFlags = []
+        if shortcut.modifiers & Shortcut.command != 0 { mask.insert(.command) }
+        if shortcut.modifiers & Shortcut.option != 0 { mask.insert(.option) }
+        if shortcut.modifiers & Shortcut.control != 0 { mask.insert(.control) }
+        if shortcut.modifiers & Shortcut.shift != 0 { mask.insert(.shift) }
+        item.keyEquivalentModifierMask = mask
+    }
+
     // MARK: - Indexing
 
+    private var indexer: AppIndexer {
+        AppIndexer(roots: AppIndexer.defaultRoots + settings.extraFolders)
+    }
+
     private func reindex() {
-        guard !isIndexing else { return }
+        guard !isIndexing else {
+            needsReindex = true
+            return
+        }
         if let lastIndexed, Date().timeIntervalSince(lastIndexed) < Self.rescanInterval { return }
         isIndexing = true
+        needsReindex = false
         let indexer = indexer
         Task {
             let apps = await Task.detached(priority: .utility) { indexer.scan() }.value
@@ -119,11 +187,48 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             await IconCache.shared.preload(apps.map(\.url.path))
             lastIndexed = Date()
             isIndexing = false
-            if !didPrewarm {
+            if needsReindex {
+                lastIndexed = nil
+                reindex()
+            } else if !didPrewarm {
                 didPrewarm = true
                 prewarm()
             }
         }
+    }
+
+    // MARK: - Menus
+
+    /// The menu bar shown while SwiftCast is active, i.e. while Settings is open. It's what
+    /// gives that window ⌘W, ⌘Q, ⌘, and the edit shortcuts.
+    private func setupMainMenu() {
+        let appMenu = NSMenu()
+        let settingsItem = NSMenuItem(title: "Settings…", action: #selector(showSettings), keyEquivalent: ",")
+        settingsItem.target = self
+        appMenu.addItem(settingsItem)
+        appMenu.addItem(.separator())
+        appMenu.addItem(withTitle: "Quit SwiftCast", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+
+        let editMenu = NSMenu(title: "Edit")
+        editMenu.addItem(withTitle: "Undo", action: Selector(("undo:")), keyEquivalent: "z")
+        editMenu.addItem(withTitle: "Redo", action: Selector(("redo:")), keyEquivalent: "Z")
+        editMenu.addItem(.separator())
+        editMenu.addItem(withTitle: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
+        editMenu.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
+        editMenu.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
+        editMenu.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
+
+        let windowMenu = NSMenu(title: "Window")
+        windowMenu.addItem(withTitle: "Close", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
+
+        let mainMenu = NSMenu()
+        for menu in [appMenu, editMenu, windowMenu] {
+            let item = NSMenuItem()
+            item.submenu = menu
+            mainMenu.addItem(item)
+        }
+        NSApp.mainMenu = mainMenu
+        NSApp.windowsMenu = windowMenu
     }
 
     // MARK: - Status item
@@ -133,43 +238,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         item.button?.image = NSImage(systemSymbolName: "magnifyingglass", accessibilityDescription: "SwiftCast")
 
         let menu = NSMenu()
-        let open = NSMenuItem(title: "Open SwiftCast", action: #selector(togglePanel), keyEquivalent: " ")
-        open.keyEquivalentModifierMask = [.command]
+        let open = NSMenuItem(title: "Open SwiftCast", action: #selector(togglePanel), keyEquivalent: "")
         open.target = self
         menu.addItem(open)
+        openMenuItem = open
         menu.addItem(.separator())
-        let login = NSMenuItem(title: "Launch at Login", action: #selector(toggleLaunchAtLogin(_:)), keyEquivalent: "")
-        login.target = self
-        menu.addItem(login)
+        let settingsItem = NSMenuItem(title: "Settings…", action: #selector(showSettings), keyEquivalent: ",")
+        settingsItem.target = self
+        menu.addItem(settingsItem)
         menu.addItem(.separator())
         menu.addItem(NSMenuItem(title: "Quit SwiftCast", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
-        menu.delegate = self
         item.menu = menu
 
         statusItem = item
-    }
-}
-
-// MARK: - Launch at login
-
-extension AppDelegate: NSMenuDelegate {
-    func menuNeedsUpdate(_ menu: NSMenu) {
-        let enabled = SMAppService.mainApp.status == .enabled
-        for item in menu.items where item.action == #selector(toggleLaunchAtLogin(_:)) {
-            item.state = enabled ? .on : .off
-        }
-    }
-
-    @objc private func toggleLaunchAtLogin(_ sender: NSMenuItem) {
-        let service = SMAppService.mainApp
-        do {
-            if service.status == .enabled {
-                try service.unregister()
-            } else {
-                try service.register()
-            }
-        } catch {
-            NSLog("SwiftCast: couldn't change launch at login: \(error.localizedDescription)")
-        }
     }
 }
