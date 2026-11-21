@@ -46,11 +46,16 @@ final class ResultsListView: NSView {
 
     override var isFlipped: Bool { true }
 
-    /// Shows `results` (at most `capacity`), touching only rows whose content changed.
-    func update(_ results: [SearchResult], detail: (AppEntry) -> String?) {
-        let newCount = min(results.count, rows.count)
+    /// Shows `items` (at most `capacity`), touching only rows whose content changed.
+    /// `detail` gives the grey text that tells apart apps sharing a name.
+    func update(_ items: [LauncherItem], detail: (AppEntry) -> String?) {
+        let newCount = min(items.count, rows.count)
         for index in 0..<newCount {
-            rows[index].configure(with: results[index], detail: detail(results[index].app))
+            let item = items[index]
+            switch item {
+            case .app(let result): rows[index].configure(with: item, detail: detail(result.app))
+            case .calculation(let calculation): rows[index].configure(with: item, detail: "= " + calculation.expression)
+            }
             rows[index].isHidden = false
         }
         for index in newCount..<max(count, newCount) {
@@ -120,11 +125,13 @@ final class ResultsListView: NSView {
 }
 
 /// Icon and app name, with the letters that matched the query in bold, plus grey detail
-/// text for apps that share a name. A soft rounded highlight marks the selection.
+/// text for apps that share a name. A calculation shows its result, with the expression as
+/// the detail. A soft rounded highlight marks the selection.
 /// Laid out with frames, which is cheaper than constraints for a view this simple.
 private final class ResultRowView: NSView {
     private static let nameFont = NSFont.systemFont(ofSize: 14)
     private static let matchFont = NSFont.systemFont(ofSize: 14, weight: .bold)
+    private static let calculatorPath = "/System/Applications/Calculator.app"
 
     var onClick: () -> Void = {}
     var isSelected = false {
@@ -134,7 +141,7 @@ private final class ResultRowView: NSView {
     private let icon = NSImageView()
     private let nameLabel = NSTextField(labelWithString: "")
     private let detailLabel = NSTextField(labelWithString: "")
-    private var result: SearchResult?
+    private var item: LauncherItem?
     private var detail: String?
 
     init() {
@@ -150,17 +157,30 @@ private final class ResultRowView: NSView {
         fatalError("init(coder:) is not used")
     }
 
-    func configure(with result: SearchResult, detail: String?) {
-        guard result != self.result || detail != self.detail else { return }
-        if result.app != self.result?.app {
-            icon.image = IconCache.shared.icon(for: result.app.url.path)
+    func configure(with item: LauncherItem, detail: String?) {
+        guard item != self.item || detail != self.detail else { return }
+        let iconPath = Self.iconPath(for: item)
+        if self.item.map(Self.iconPath) != iconPath {
+            icon.image = IconCache.shared.icon(for: iconPath)
         }
-        self.result = result
+        self.item = item
         self.detail = detail
-        nameLabel.attributedStringValue = Self.name(result.app.name, bolding: result.matchedIndices)
+        switch item {
+        case .app(let result):
+            nameLabel.attributedStringValue = Self.name(result.app.name, bolding: result.matchedIndices)
+        case .calculation(let calculation):
+            nameLabel.attributedStringValue = Self.name(calculation.display, bolding: Array(0..<calculation.display.count))
+        }
         detailLabel.stringValue = detail ?? ""
         detailLabel.isHidden = detail == nil
         needsLayout = true
+    }
+
+    private static func iconPath(for item: LauncherItem) -> String {
+        switch item {
+        case .app(let result): result.app.url.path
+        case .calculation: calculatorPath
+        }
     }
 
     /// `name` with the characters at `indices` (Character offsets) in bold.

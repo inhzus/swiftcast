@@ -18,19 +18,27 @@ final class LauncherViewController: NSViewController, NSTextFieldDelegate {
     /// Called with the height the panel should have whenever the content changes.
     var onHeightChange: (CGFloat) -> Void = { _ in }
 
-    private let resultsList = ResultsListView(capacity: LauncherViewModel.resultLimit)
+    private let resultsList = ResultsListView(capacity: LauncherViewModel.itemLimit)
     /// What the views outside the list currently show; see `resultsChanged()`.
     private struct Chrome: Equatable {
         var isEmpty: Bool
         var hasQuery: Bool
     }
     private var lastChrome: Chrome?
+    /// What the footer currently shows; see `selectionChanged()`.
+    private struct Footer: Equatable {
+        var label: String
+        var isCalculation: Bool
+    }
+    private var lastFooter: Footer?
+    private static let appHints = [("↩", "Open"), ("⌘↩", "Show in Finder"), ("esc", "Close")]
+    private static let calculationHints = [("↩", "Copy"), ("esc", "Close")]
     private let scrollView = NSScrollView()
     private let headerSeparator = NSBox()
     private let footerSeparator = NSBox()
     private let emptyLabel = NSTextField(labelWithString: "No matching applications")
     private let sectionLabel = NSTextField(labelWithString: "")
-    private let hintsView = KeyHintsView(hints: [("↩", "Open"), ("⌘↩", "Show in Finder"), ("esc", "Close")])
+    private let hintsView = KeyHintsView(hints: LauncherViewController.appHints)
     private let clearButton = NSButton(
         image: NSImage(systemSymbolName: "xmark.circle.fill", accessibilityDescription: "Clear search")!,
         target: nil,
@@ -70,12 +78,12 @@ final class LauncherViewController: NSViewController, NSTextFieldDelegate {
 
         resultsList.frame = NSRect(x: 0, y: 0, width: LauncherPanel.width, height: 0)
         resultsList.onClick = { [unowned self] index in
-            guard model.results.indices.contains(index) else { return }
+            guard model.items.indices.contains(index) else { return }
             model.selection = index
             model.launchSelected()
         }
         resultsList.onHover = { [unowned self] index in
-            if model.results.indices.contains(index) { model.selection = index }
+            if model.items.indices.contains(index) { model.selection = index }
         }
 
         scrollView.documentView = resultsList
@@ -146,7 +154,7 @@ final class LauncherViewController: NSViewController, NSTextFieldDelegate {
 
     /// The panel height for the current content: the search field alone, or full height.
     private var preferredHeight: CGFloat {
-        if model.results.isEmpty && model.query.isEmpty { return Self.headerHeight }
+        if model.items.isEmpty && model.query.isEmpty { return Self.headerHeight }
         return Self.headerHeight + 1 + ResultsListView.height(forRows: Self.maxVisibleRows) + Self.footerHeight
     }
 
@@ -173,12 +181,12 @@ final class LauncherViewController: NSViewController, NSTextFieldDelegate {
     private func resultsChanged() {
         // Empty results only hide the list, leaving its rows as they are, so the next query
         // changes as few rows as possible.
-        if !model.results.isEmpty {
-            PerfLog.measure("reload") { resultsList.update(model.results, detail: model.detail(for:)) }
+        if !model.items.isEmpty {
+            PerfLog.measure("reload") { resultsList.update(model.items, detail: model.detail(for:)) }
         }
         // Most keys change only the rows. The chrome and layout are touched only when they
         // change, since even an identical `stringValue` redraws its label.
-        let isEmpty = model.results.isEmpty
+        let isEmpty = model.items.isEmpty
         let chrome = Chrome(isEmpty: isEmpty, hasQuery: !model.query.isEmpty)
         if chrome != lastChrome {
             lastChrome = chrome
@@ -189,7 +197,6 @@ final class LauncherViewController: NSViewController, NSTextFieldDelegate {
             clearButton.isHidden = !chrome.hasQuery
             headerSeparator.isHidden = isEmpty && !chrome.hasQuery
             emptyLabel.isHidden = !isEmpty || !chrome.hasQuery
-            sectionLabel.stringValue = chrome.hasQuery ? "Applications" : "Recent"
             view.needsLayout = true
         }
         let height = preferredHeight
@@ -200,8 +207,17 @@ final class LauncherViewController: NSViewController, NSTextFieldDelegate {
         selectionChanged()
     }
 
+    /// Moves the highlight, and switches the footer between a calculation's hints and an app's.
     private func selectionChanged() {
-        resultsList.select(model.results.indices.contains(model.selection) ? model.selection : nil)
+        resultsList.select(model.items.indices.contains(model.selection) ? model.selection : nil)
+        let isCalculation = if case .calculation = model.selectedItem { true } else { false }
+        let label = isCalculation ? "Calculator" : model.query.isEmpty ? "Recent" : "Applications"
+        let footer = Footer(label: label, isCalculation: isCalculation)
+        guard footer != lastFooter else { return }
+        lastFooter = footer
+        sectionLabel.stringValue = label
+        hintsView.hints = isCalculation ? Self.calculationHints : Self.appHints
+        view.needsLayout = true
     }
 
     @objc private func clearQuery() {
@@ -250,7 +266,12 @@ private final class KeyHintsView: NSView {
     private static let gap: CGFloat = 5
     private static let spacing: CGFloat = 14
 
-    private let hints: [(keys: String, action: String)]
+    var hints: [(keys: String, action: String)] {
+        didSet {
+            invalidateIntrinsicContentSize()
+            needsDisplay = true
+        }
+    }
 
     init(hints: [(keys: String, action: String)]) {
         self.hints = hints
