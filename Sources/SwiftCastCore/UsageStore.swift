@@ -38,6 +38,12 @@ public final class UsageStore {
         }
     }
 
+    /// Forgets all launch history.
+    public func clear() {
+        records = [:]
+        defaults.removeObject(forKey: key)
+    }
+
     /// Up to `maxBoost` points: grows logarithmically with launch count and halves for every
     /// week since the last launch. Zero for apps never launched.
     public func boost(for id: String, at now: Date = Date()) -> Int {
