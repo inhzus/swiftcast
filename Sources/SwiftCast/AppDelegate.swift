@@ -71,6 +71,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             self?.hidePanel()
             self?.showSettings()
         }
+        panel.placement = settings.launcherPlacement
+        panel.onPlacementChange = { [weak self] in self?.settings.launcherPlacement = $0 }
         self.panel = panel
     }
 

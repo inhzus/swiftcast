@@ -102,7 +102,10 @@ final class LauncherViewController: NSViewController, NSTextFieldDelegate {
         container.autoresizingMask = [.width, .height]
         root.addSubview(container)
 
-        let (capsule, capsuleContent) = GlassSurface.make(cornerRadius: Self.capsuleHeight / 2)
+        let (capsule, capsuleContent) = GlassSurface.make(
+            cornerRadius: Self.capsuleHeight / 2,
+            content: DragHandleView()
+        )
         capsule.frame = Self.capsuleFrame
         surfaces.addSubview(capsule)
         setUpCapsule(capsuleContent)
