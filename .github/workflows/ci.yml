@@ -1,0 +1,27 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    # The macOS 26 SDK is needed for Liquid Glass (NSGlassEffectView).
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+      - run: swift --version
+      - name: Test
+        run: scripts/test.sh
+      - name: Bundle
+        run: scripts/bundle.sh
+      - name: Check architectures
+        run: |
+          archs="$(lipo -archs build/SwiftCast.app/Contents/MacOS/SwiftCast)"
+          echo "$archs"
+          [[ "$archs" == *arm64* && "$archs" == *x86_64* ]]
