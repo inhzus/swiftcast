@@ -32,9 +32,53 @@ final class LauncherViewModel {
     var onSelectionChange: () -> Void = {}
     var onDismiss: () -> Void = {}
     private let engine: SearchEngine
+    private let history: QueryHistory
+    private var historyCursor = HistoryCursor()
 
-    init(engine: SearchEngine) {
+    init(engine: SearchEngine, history: QueryHistory) {
         self.engine = engine
+        self.history = history
+    }
+
+    /// The user typed: any history browsing ends, so ↑/↓ move through results again.
+    func userEdited(_ text: String) {
+        historyCursor.reset()
+        query = text
+    }
+
+    /// Clears the search and stops browsing history.
+    func reset() {
+        historyCursor.reset()
+        query = ""
+    }
+
+    /// Re-runs the current search for a restored panel, keeping the selected row.
+    func restore() {
+        historyCursor.reset()
+        refresh()
+    }
+
+    /// ↑: in an empty field, or while browsing, steps to an older search and returns its text
+    /// for the field; otherwise moves the selection up and returns `nil`.
+    func moveUp() -> String? {
+        if let text = stepHistory(1) { return text }
+        moveSelection(by: -1)
+        return nil
+    }
+
+    /// ↓: while browsing, steps to a newer search (or back to an empty field) and returns its
+    /// text; otherwise moves the selection down and returns `nil`.
+    func moveDown() -> String? {
+        if let text = stepHistory(-1) { return text }
+        moveSelection(by: 1)
+        return nil
+    }
+
+    private func stepHistory(_ delta: Int) -> String? {
+        guard query.isEmpty || historyCursor.isBrowsing,
+              let text = historyCursor.move(delta, through: history.entries) else { return nil }
+        query = text
+        return text
     }
 
     var selectedItem: LauncherItem? {
@@ -57,6 +101,7 @@ final class LauncherViewModel {
 
     /// Opens the selected app, or copies the selected calculation's result.
     func launchSelected() {
+        if selectedItem != nil { history.record(query) }
         switch selectedItem {
         case .calculation(let calculation):
             onDismiss()
@@ -78,6 +123,7 @@ final class LauncherViewModel {
 
     func revealSelected() {
         guard case .app(let result) = selectedItem else { return }
+        history.record(query)
         onDismiss()
         NSWorkspace.shared.activateFileViewerSelecting([result.app.url])
     }
