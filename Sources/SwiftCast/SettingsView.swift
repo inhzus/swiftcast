@@ -48,6 +48,11 @@ struct SettingsView: View {
                 if let shortcutError = state.shortcutError {
                     Text(shortcutError).font(.callout).foregroundStyle(.red)
                 }
+                Picker("Keep last search for", selection: $settings.restoreInterval) {
+                    ForEach(Self.restoreChoices, id: \.seconds) { choice in
+                        Text(choice.label).tag(choice.seconds)
+                    }
+                }
                 Toggle("Launch at login", isOn: Binding(get: { state.launchAtLogin }, set: setLaunchAtLogin))
                 if let loginError = state.loginError {
                     Text(loginError).font(.callout).foregroundStyle(.red)
@@ -86,7 +91,7 @@ struct SettingsView: View {
                         .disabled(state.historyCleared)
                 } label: {
                     Text("Usage history")
-                    Text("Ranks the apps you open most and lists recent ones.")
+                    Text("Ranks the apps you open most, lists recent ones, and remembers your searches.")
                 }
             }
 
@@ -137,6 +142,12 @@ struct SettingsView: View {
         let known = Set((AppIndexer.defaultRoots + settings.extraFolders).map(\.standardizedFileURL))
         settings.extraFolders += panel.urls.filter { !known.contains($0.standardizedFileURL) }
     }
+
+    /// Choices for how long a closed panel keeps its search.
+    private static let restoreChoices: [(label: String, seconds: TimeInterval)] = [
+        ("Never", 0), ("15 seconds", 15), ("30 seconds", 30), ("1 minute", 60),
+        ("2 minutes", 120), ("5 minutes", 300), ("10 minutes", 600),
+    ]
 
     private static func displayPath(_ url: URL) -> String {
         (url.path as NSString).abbreviatingWithTildeInPath

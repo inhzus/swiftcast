@@ -63,7 +63,7 @@ final class LauncherViewController: NSViewController, NSTextFieldDelegate {
 
         searchField.delegate = self
         searchField.onQueryChange = { [unowned self] query in
-            if model.query != query { model.query = query }
+            if model.query != query { model.userEdited(query) }
         }
 
         clearButton.isBordered = false
@@ -159,16 +159,27 @@ final class LauncherViewController: NSViewController, NSTextFieldDelegate {
     }
 
     /// Exercises the typing path once (focus, insert text, search, fill rows) so its one-time
-    /// setup happens before the user's first key. `prepareForShow()` clears it afterward.
+    /// setup happens before the user's first key. `prepareForShow(restoring:)` clears it afterward.
     func prewarm() {
         view.window?.makeFirstResponder(searchField)
         (searchField.currentEditor() as? NSTextView)?.insertText("a", replacementRange: NSRange(location: NSNotFound, length: 0))
     }
 
     /// Clears the query and focuses the field. Call before the panel is ordered front.
-    func prepareForShow() {
+    /// Readies the panel to be ordered front: either clears the search, or (`restoring`) keeps
+    /// the last one with its text selected, so typing replaces it.
+    func prepareForShow(restoring: Bool) {
+        if restoring && !model.query.isEmpty {
+            model.restore()
+            if searchField.currentEditor() == nil {
+                view.window?.makeFirstResponder(searchField)  // selects all on its own
+            } else {
+                searchField.currentEditor()?.selectAll(nil)
+            }
+            return
+        }
         searchField.stringValue = ""
-        model.query = ""
+        model.reset()
         // Usually the field is still being edited from last time; re-focusing it would tear
         // down and rebuild its field editor.
         if searchField.currentEditor() == nil {
@@ -235,9 +246,9 @@ final class LauncherViewController: NSViewController, NSTextFieldDelegate {
     func control(_ control: NSControl, textView: NSTextView, doCommandBy selector: Selector) -> Bool {
         switch selector {
         case #selector(NSResponder.moveDown(_:)):
-            model.moveSelection(by: 1)
+            showHistoryText(model.moveDown())
         case #selector(NSResponder.moveUp(_:)):
-            model.moveSelection(by: -1)
+            showHistoryText(model.moveUp())
         case #selector(NSResponder.insertNewline(_:)):
             model.launchSelected()
         case #selector(NSResponder.cancelOperation(_:)):
@@ -248,6 +259,13 @@ final class LauncherViewController: NSViewController, NSTextFieldDelegate {
             return false
         }
         return true
+    }
+
+    /// Puts a search recalled from history in the field, caret at the end.
+    private func showHistoryText(_ text: String?) {
+        guard let text else { return }
+        searchField.stringValue = text
+        searchField.currentEditor()?.selectedRange = NSRange(location: (text as NSString).length, length: 0)
     }
 
     private static func isCommandReturn(_ event: NSEvent?) -> Bool {

@@ -5,7 +5,8 @@ import SwiftCastCore
 final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private let settings = AppSettings()
     private let engine = SearchEngine(usage: UsageStore())
-    private lazy var model = LauncherViewModel(engine: engine)
+    private let queryHistory = QueryHistory()
+    private lazy var model = LauncherViewModel(engine: engine, history: queryHistory)
     private lazy var launcher = LauncherViewController(model: model)
     private lazy var settingsWindow = SettingsWindowController { [unowned self] in
         SettingsView(settings: settings, actions: SettingsActions(
@@ -15,6 +16,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             },
             clearHistory: { [unowned self] in
                 engine.usage.clear()
+                queryHistory.clear()
                 model.refresh()
             }
         ))
@@ -28,6 +30,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var needsReindex = false
     private var lastIndexed: Date?
     private var didPrewarm = false
+    /// When the panel was last hidden; a reopen soon after brings back the last search.
+    private var lastHidden: Date?
 
     /// Rescans on panel open only when the last scan is older than this.
     private static let rescanInterval: TimeInterval = 60
@@ -89,7 +93,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private func showPanel() {
         guard let panel else { return }
         // Reset and lay out before ordering front, so the first frame shown is already correct.
-        launcher.prepareForShow()
+        let interval = settings.restoreInterval
+        let restoring = interval > 0 && lastHidden.map { Date().timeIntervalSince($0) < interval } == true
+        launcher.prepareForShow(restoring: restoring)
         PerfLog.measure("layout") { panel.contentView?.layoutSubtreeIfNeeded() }
         panel.positionOnActiveScreen()
         // A non-activating panel can become key without activating the app, which skips an
@@ -99,7 +105,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     private func hidePanel() {
-        panel?.orderOut(nil)
+        guard let panel, panel.isVisible else { return }
+        panel.orderOut(nil)
+        lastHidden = Date()
     }
 
     /// Runs the panel through one invisible show/type/draw cycle, so the first real open
@@ -117,7 +125,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             guard let self, let panel = self.panel, !panel.isKeyWindow else { return }
             panel.orderOut(nil)
             panel.alphaValue = 1
-            launcher.prepareForShow()
+            launcher.prepareForShow(restoring: false)
         }
     }
 

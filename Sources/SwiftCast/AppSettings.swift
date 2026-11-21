@@ -14,6 +14,11 @@ final class AppSettings {
         didSet { save(shortcut, forKey: "hotKey") }
     }
 
+    /// How long after closing the panel a reopen brings back the last search; 0 never does.
+    var restoreInterval: TimeInterval {
+        didSet { defaults.set(restoreInterval, forKey: "restoreInterval") }
+    }
+
     /// Folders searched for apps on top of `AppIndexer.defaultRoots`.
     var extraFolders: [URL] {
         didSet {
@@ -28,6 +33,7 @@ final class AppSettings {
         self.defaults = defaults
         shortcut = defaults.data(forKey: "hotKey")
             .flatMap { try? JSONDecoder().decode(Shortcut.self, from: $0) } ?? .default
+        restoreInterval = defaults.object(forKey: "restoreInterval") as? TimeInterval ?? 60
         extraFolders = (defaults.stringArray(forKey: "searchFolders") ?? []).map { URL(filePath: $0) }
     }
 
