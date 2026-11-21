@@ -22,7 +22,7 @@ built for latency, has no dependencies, and needs no special permissions.
 - **Quick math.** Arithmetic, percentages, functions and unit conversions; ↩ copies the result.
 - **Search history.** With the field empty, ↑/↓ steps through past searches. Reopen within a
   minute and your last search is still there (configurable).
-- **Native look.** Liquid Glass on macOS 26, a frosted panel on macOS 14–15.
+- **Native look.** Liquid Glass throughout.
 - **Settings** (⌘,): global shortcut, launch at login, extra folders to search, clear history.
 - **No Accessibility permission.** The global shortcut uses the system hotkey API.
 
@@ -51,7 +51,7 @@ function or conversion, so searching for `1Password` or `2048` still finds apps.
 
 ## Install
 
-Requires macOS 14 Sonoma or later, on Apple silicon or Intel.
+Requires macOS 26 Tahoe or later, on Apple silicon or Intel.
 
 **Homebrew**
 
