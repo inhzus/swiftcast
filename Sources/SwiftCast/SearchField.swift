@@ -15,7 +15,7 @@ final class SearchField: NSTextField {
         isBordered = false
         drawsBackground = false
         focusRingType = .none
-        font = .systemFont(ofSize: 22)
+        font = .systemFont(ofSize: 24)
         placeholderString = "Search apps…"
         cell?.isScrollable = true
         cell?.wraps = false

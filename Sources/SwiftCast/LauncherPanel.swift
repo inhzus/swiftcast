@@ -1,16 +1,17 @@
 import AppKit
 
-/// Borderless floating panel that hosts the launcher UI. Its top edge stays put while its
-/// height follows the content (see `setHeight(_:)`).
+/// Borderless floating panel that hosts the launcher UI.
+///
+/// It's one fixed size and fully transparent: the search capsule and results card inside it
+/// change shape with Core Animation instead. Resizing a window costs one to two frames on
+/// screen; clicks on the transparent parts fall through to whatever is below.
 final class LauncherPanel: NSPanel {
-    static let width: CGFloat = 680
-
     var onCancel: () -> Void = {}
     var onSettings: () -> Void = {}
 
     init(content: NSView) {
         super.init(
-            contentRect: NSRect(x: 0, y: 0, width: Self.width, height: 60),
+            contentRect: NSRect(origin: .zero, size: LauncherViewController.windowSize),
             styleMask: [.borderless, .nonactivatingPanel, .fullSizeContentView],
             backing: .buffered,
             defer: false
@@ -20,27 +21,13 @@ final class LauncherPanel: NSPanel {
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         isOpaque = false
         backgroundColor = .clear
-        hasShadow = true
+        // The surfaces draw their own shadows; a window shadow would outline the empty area.
+        hasShadow = false
         hidesOnDeactivate = false
         isReleasedWhenClosed = false
-        // Appear in a single frame instead of fading in.
+        // The content animates itself in; the window should just appear.
         animationBehavior = .none
-
-        let background = BorderedEffectView(frame: NSRect(x: 0, y: 0, width: Self.width, height: 60))
-        background.material = .popover
-        background.blendingMode = .behindWindow
-        background.state = .active
-        background.wantsLayer = true
-        background.layer?.cornerRadius = 14
-        background.layer?.masksToBounds = true
-        background.updateBorder()
-        background.autoresizingMask = [.width, .height]
-
-        content.frame = background.bounds
-        content.autoresizingMask = [.width, .height]
-        background.addSubview(content)
-
-        contentView = background
+        contentView = content
     }
 
     override var canBecomeKey: Bool { true }
@@ -74,40 +61,17 @@ final class LauncherPanel: NSPanel {
         return super.performKeyEquivalent(with: event)
     }
 
-    /// Centers the panel horizontally, its top a fifth of the way down the screen under the mouse.
+    /// Centers the panel horizontally, with the search capsule's top a fifth of the way down
+    /// the screen under the mouse.
     func positionOnActiveScreen() {
         let mouse = NSEvent.mouseLocation
         guard let screen = NSScreen.screens.first(where: { NSMouseInRect(mouse, $0.frame, false) })
             ?? NSScreen.main else { return }
         let visible = screen.visibleFrame
-        let top = visible.maxY - visible.height * 0.2
-        setFrameOrigin(NSPoint(x: visible.midX - Self.width / 2, y: top - frame.height))
-    }
-
-    /// Resizes the panel, keeping its top edge in place.
-    func setHeight(_ height: CGFloat) {
-        guard frame.height != height else { return }
-        var newFrame = frame
-        newFrame.origin.y += newFrame.height - height
-        newFrame.size.height = height
-        setFrame(newFrame, display: isVisible)
-        // The shadow follows the window's shape, which just changed.
-        invalidateShadow()
-    }
-}
-
-/// The panel's frosted background, with a hairline border that adapts to light and dark.
-private final class BorderedEffectView: NSVisualEffectView {
-    override func viewDidChangeEffectiveAppearance() {
-        super.viewDidChangeEffectiveAppearance()
-        updateBorder()
-    }
-
-    /// A CGColor doesn't follow the appearance, so it's resolved again on every change.
-    func updateBorder() {
-        effectiveAppearance.performAsCurrentDrawingAppearance {
-            layer?.borderWidth = 1
-            layer?.borderColor = NSColor.labelColor.withAlphaComponent(0.12).cgColor
-        }
+        let capsuleTop = visible.maxY - visible.height * 0.2
+        setFrameOrigin(NSPoint(
+            x: visible.midX - frame.width / 2,
+            y: capsuleTop + LauncherViewController.margin - frame.height
+        ))
     }
 }

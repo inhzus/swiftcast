@@ -32,6 +32,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var didPrewarm = false
     /// When the panel was last hidden; a reopen soon after brings back the last search.
     private var lastHidden: Date?
+    /// The panel is fading out; it's still visible until that finishes.
+    private var isHiding = false
 
     /// Rescans on panel open only when the last scan is older than this.
     private static let rescanInterval: TimeInterval = 60
@@ -70,8 +72,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private func setupPanel() {
         model.onDismiss = { [weak self] in self?.hidePanel() }
         let panel = LauncherPanel(content: launcher.view)
-        launcher.onHeightChange = { [unowned panel] height in panel.setHeight(height) }
-        panel.setHeight(launcher.view.frame.height)
         panel.delegate = self
         panel.onCancel = { [weak self] in self?.hidePanel() }
         panel.onSettings = { [weak self] in
@@ -83,7 +83,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     @objc private func togglePanel() {
         guard let panel else { return }
-        if panel.isVisible {
+        if panel.isVisible && !isHiding {
             hidePanel()
         } else {
             showPanel()
@@ -100,14 +100,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         panel.positionOnActiveScreen()
         // A non-activating panel can become key without activating the app, which skips an
         // activation round trip through the window server.
+        isHiding = false
         PerfLog.measure("orderFront") { panel.makeKeyAndOrderFront(nil) }
+        launcher.animateIn()
         DispatchQueue.main.async { [weak self] in self?.reindex() }
     }
 
+    /// Fades the panel out, then orders it out. `lastHidden` is taken now, so the restore
+    /// window starts when the user dismissed the panel.
     private func hidePanel() {
-        guard let panel, panel.isVisible else { return }
-        panel.orderOut(nil)
+        guard let panel, panel.isVisible, !isHiding else { return }
+        isHiding = true
         lastHidden = Date()
+        launcher.animateOut { [weak self] in
+            panel.orderOut(nil)
+            self?.isHiding = false
+        }
     }
 
     /// Runs the panel through one invisible show/type/draw cycle, so the first real open
