@@ -12,6 +12,9 @@ final class ResultsListView: NSView {
     static let inset: CGFloat = 8
 
     var onClick: (Int) -> Void = { _ in }
+    /// Called when the mouse moves onto a row. Only real movement reports, so a resting
+    /// pointer doesn't take the selection from the keyboard as rows change under it.
+    var onHover: (Int) -> Void = { _ in }
 
     /// Height of a list showing `rows` rows.
     static func height(forRows rows: Int) -> CGFloat {
@@ -30,6 +33,11 @@ final class ResultsListView: NSView {
             row.onClick = { [unowned self] in onClick(index) }
             addSubview(row)
         }
+        addTrackingArea(NSTrackingArea(
+            rect: .zero,
+            options: [.mouseMoved, .activeAlways, .inVisibleRect],
+            owner: self
+        ))
     }
 
     required init?(coder: NSCoder) {
@@ -38,11 +46,11 @@ final class ResultsListView: NSView {
 
     override var isFlipped: Bool { true }
 
-    /// Shows `results` (at most `capacity`), touching only rows whose app changed.
-    func update(_ results: [AppEntry]) {
+    /// Shows `results` (at most `capacity`), touching only rows whose content changed.
+    func update(_ results: [SearchResult], detail: (AppEntry) -> String?) {
         let newCount = min(results.count, rows.count)
         for index in 0..<newCount {
-            rows[index].configure(with: results[index])
+            rows[index].configure(with: results[index], detail: detail(results[index].app))
             rows[index].isHidden = false
         }
         for index in newCount..<max(count, newCount) {
@@ -83,6 +91,13 @@ final class ResultsListView: NSView {
         scrollView.reflectScrolledClipView(clip)
     }
 
+    override func mouseMoved(with event: NSEvent) {
+        let point = convert(event.locationInWindow, from: nil)
+        if let index = rows.prefix(count).firstIndex(where: { $0.frame.contains(point) }) {
+            onHover(index)
+        }
+    }
+
     // Rows are positioned whenever the list is resized, rather than in `layout()`, which a
     // frame-based document view isn't guaranteed to receive.
     override func setFrameSize(_ newSize: NSSize) {
@@ -104,9 +119,13 @@ final class ResultsListView: NSView {
     }
 }
 
-/// Icon, app name, and containing folder, with a soft rounded highlight when selected.
+/// Icon and app name, with the letters that matched the query in bold, plus grey detail
+/// text for apps that share a name. A soft rounded highlight marks the selection.
 /// Laid out with frames, which is cheaper than constraints for a view this simple.
 private final class ResultRowView: NSView {
+    private static let nameFont = NSFont.systemFont(ofSize: 14)
+    private static let matchFont = NSFont.systemFont(ofSize: 14, weight: .bold)
+
     var onClick: () -> Void = {}
     var isSelected = false {
         didSet { if isSelected != oldValue { needsDisplay = true } }
@@ -114,34 +133,58 @@ private final class ResultRowView: NSView {
 
     private let icon = NSImageView()
     private let nameLabel = NSTextField(labelWithString: "")
-    private let pathLabel = NSTextField(labelWithString: "")
-    private var app: AppEntry?
+    private let detailLabel = NSTextField(labelWithString: "")
+    private var result: SearchResult?
+    private var detail: String?
 
     init() {
         super.init(frame: .zero)
-        nameLabel.font = .systemFont(ofSize: 14, weight: .medium)
         nameLabel.lineBreakMode = .byTruncatingTail
-        pathLabel.font = .systemFont(ofSize: 11)
-        pathLabel.textColor = .tertiaryLabelColor
-        pathLabel.lineBreakMode = .byTruncatingMiddle
-        for view in [icon, nameLabel, pathLabel] { addSubview(view) }
+        detailLabel.font = .systemFont(ofSize: 12)
+        detailLabel.textColor = .tertiaryLabelColor
+        detailLabel.lineBreakMode = .byTruncatingMiddle
+        for view in [icon, nameLabel, detailLabel] { addSubview(view) }
     }
 
     required init?(coder: NSCoder) {
         fatalError("init(coder:) is not used")
     }
 
-    func configure(with app: AppEntry) {
-        guard app != self.app else { return }
-        self.app = app
-        icon.image = IconCache.shared.icon(for: app.url.path)
-        nameLabel.stringValue = app.name
-        pathLabel.stringValue = (app.url.deletingLastPathComponent().path as NSString).abbreviatingWithTildeInPath
+    func configure(with result: SearchResult, detail: String?) {
+        guard result != self.result || detail != self.detail else { return }
+        if result.app != self.result?.app {
+            icon.image = IconCache.shared.icon(for: result.app.url.path)
+        }
+        self.result = result
+        self.detail = detail
+        nameLabel.attributedStringValue = Self.name(result.app.name, bolding: result.matchedIndices)
+        detailLabel.stringValue = detail ?? ""
+        detailLabel.isHidden = detail == nil
+        needsLayout = true
+    }
+
+    /// `name` with the characters at `indices` (Character offsets) in bold.
+    private static func name(_ name: String, bolding indices: [Int]) -> NSAttributedString {
+        let text = NSMutableAttributedString(string: name, attributes: [
+            .font: nameFont,
+            .foregroundColor: NSColor.labelColor,
+        ])
+        guard !indices.isEmpty else { return text }
+        let matched = Set(indices)
+        var offset = 0
+        for (index, character) in name.enumerated() {
+            let length = character.utf16.count
+            if matched.contains(index) {
+                text.addAttribute(.font, value: matchFont, range: NSRange(location: offset, length: length))
+            }
+            offset += length
+        }
+        return text
     }
 
     override func draw(_ dirtyRect: NSRect) {
         guard isSelected else { return }
-        NSColor.controlAccentColor.withAlphaComponent(0.25).setFill()
+        NSColor.labelColor.withAlphaComponent(0.1).setFill()
         NSBezierPath(roundedRect: bounds, xRadius: 8, yRadius: 8).fill()
     }
 
@@ -152,9 +195,15 @@ private final class ResultRowView: NSView {
     override func layout() {
         super.layout()
         let textX: CGFloat = 54
-        let textWidth = max(bounds.width - textX - 10, 0)
+        let maxX = bounds.width - 12
+        let y = (bounds.height - 18) / 2
         icon.frame = NSRect(x: 10, y: (bounds.height - 32) / 2, width: 32, height: 32)
-        nameLabel.frame = NSRect(x: textX, y: bounds.midY, width: textWidth, height: 18)
-        pathLabel.frame = NSRect(x: textX, y: bounds.midY - 16, width: textWidth, height: 15)
+        var nameWidth = max(maxX - textX, 0)
+        if !detailLabel.isHidden {
+            nameWidth = min(ceil(nameLabel.attributedStringValue.size().width) + 4, nameWidth * 0.6)
+            let detailX = textX + nameWidth + 6
+            detailLabel.frame = NSRect(x: detailX, y: y, width: max(maxX - detailX, 0), height: 17)
+        }
+        nameLabel.frame = NSRect(x: textX, y: y, width: nameWidth, height: 18)
     }
 }

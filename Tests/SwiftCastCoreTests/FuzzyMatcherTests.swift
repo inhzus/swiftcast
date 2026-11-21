@@ -55,4 +55,17 @@ struct FuzzyMatcherTests {
         #expect(score("mail", "Mail")! > score("mail", "Mailplane")!)
         #expect(score("sa", "Safari")! > score("sa", "Safari Technology Preview")!)
     }
+
+    @Test func matchedIndicesPerTier() {
+        func indices(_ q: String, _ c: String) -> [Int]? {
+            FuzzyMatcher.match(query: q, candidate: c)?.indices
+        }
+        #expect(indices("notes", "Notes") == [0, 1, 2, 3, 4])
+        #expect(indices("sys", "System Settings") == [0, 1, 2])
+        #expect(indices("vsc", "Visual Studio Code") == [0, 7, 14])
+        #expect(indices("code", "Visual Studio Code") == [14, 15, 16, 17])
+        #expect(indices("ari", "Safari") == [3, 4, 5])
+        #expect(indices("sfr", "Safari") == [0, 2, 4])
+        #expect(indices("cafe", "Café") == [0, 1, 2, 3])
+    }
 }

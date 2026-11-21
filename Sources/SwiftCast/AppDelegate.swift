@@ -1,5 +1,6 @@
 import AppKit
 import Carbon.HIToolbox
+import ServiceManagement
 import SwiftCastCore
 
 @MainActor
@@ -137,9 +138,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         open.target = self
         menu.addItem(open)
         menu.addItem(.separator())
+        let login = NSMenuItem(title: "Launch at Login", action: #selector(toggleLaunchAtLogin(_:)), keyEquivalent: "")
+        login.target = self
+        menu.addItem(login)
+        menu.addItem(.separator())
         menu.addItem(NSMenuItem(title: "Quit SwiftCast", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
+        menu.delegate = self
         item.menu = menu
 
         statusItem = item
+    }
+}
+
+// MARK: - Launch at login
+
+extension AppDelegate: NSMenuDelegate {
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        let enabled = SMAppService.mainApp.status == .enabled
+        for item in menu.items where item.action == #selector(toggleLaunchAtLogin(_:)) {
+            item.state = enabled ? .on : .off
+        }
+    }
+
+    @objc private func toggleLaunchAtLogin(_ sender: NSMenuItem) {
+        let service = SMAppService.mainApp
+        do {
+            if service.status == .enabled {
+                try service.unregister()
+            } else {
+                try service.register()
+            }
+        } catch {
+            NSLog("SwiftCast: couldn't change launch at login: \(error.localizedDescription)")
+        }
     }
 }

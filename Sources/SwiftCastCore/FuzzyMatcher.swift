@@ -43,12 +43,26 @@ public enum FuzzyMatcher {
         }
     }
 
+    /// A successful match: its score and the matched character positions in the candidate.
+    public struct Match: Equatable, Sendable {
+        public let score: Int
+        public let indices: [Int]
+    }
+
     public static func score(query: String, candidate: String) -> Int? {
+        match(query: query, candidate: candidate)?.score
+    }
+
+    public static func match(query: String, candidate: String) -> Match? {
         guard let q = Query(query) else { return nil }
-        return score(q, Candidate(candidate))
+        return match(q, Candidate(candidate))
     }
 
     public static func score(_ query: Query, _ candidate: Candidate) -> Int? {
+        match(query, candidate)?.score
+    }
+
+    public static func match(_ query: Query, _ candidate: Candidate) -> Match? {
         let q = query.chars
         let c = candidate.chars
         guard q.count <= c.count else { return nil }
@@ -56,21 +70,24 @@ public enum FuzzyMatcher {
         let lengthPenalty = min(c.count, 99)
 
         if q == c {
-            return Tier.exact.rawValue
+            return Match(score: Tier.exact.rawValue, indices: Array(c.indices))
         }
         if c.starts(with: q) {
-            return Tier.prefix.rawValue - lengthPenalty
+            return Match(score: Tier.prefix.rawValue - lengthPenalty, indices: Array(q.indices))
         }
         if q.count > 1, candidate.initials.starts(with: q) {
-            return Tier.initials.rawValue - lengthPenalty
+            return Match(score: Tier.initials.rawValue - lengthPenalty, indices: Array(candidate.wordStarts.prefix(q.count)))
         }
-        if candidate.wordStarts.contains(where: { c[$0...].starts(with: q) }) {
-            return Tier.wordPrefix.rawValue - lengthPenalty
+        if let start = candidate.wordStarts.first(where: { c[$0...].starts(with: q) }) {
+            return Match(score: Tier.wordPrefix.rawValue - lengthPenalty, indices: Array(start..<(start + q.count)))
         }
         if let offset = firstIndex(of: q, in: c) {
-            return Tier.substring.rawValue - min(offset * 5, 50) - lengthPenalty / 2
+            return Match(
+                score: Tier.substring.rawValue - min(offset * 5, 50) - lengthPenalty / 2,
+                indices: Array(offset..<(offset + q.count))
+            )
         }
-        return subsequenceScore(q, c, wordStarts: candidate.wordStartSet)
+        return subsequenceMatch(q, c, wordStarts: candidate.wordStartSet)
     }
 
     // MARK: - Helpers
@@ -114,7 +131,8 @@ public enum FuzzyMatcher {
     }
 
     /// Greedy left-to-right subsequence match; rewards consecutive runs and word starts.
-    static func subsequenceScore(_ q: [Character], _ c: [Character], wordStarts: Set<Int>) -> Int? {
+    static func subsequenceMatch(_ q: [Character], _ c: [Character], wordStarts: Set<Int>) -> Match? {
+        var indices: [Int] = []
         var qi = 0
         var last = -1
         var bonus = 0
@@ -130,10 +148,11 @@ public enum FuzzyMatcher {
             }
             if wordStarts.contains(ci) { bonus += 15 }
             last = ci
+            indices.append(ci)
             qi += 1
         }
         guard qi == q.count else { return nil }
         let score = Tier.subsequence.rawValue + 200 + bonus - min(first, 20) - min(c.count, 99) / 2
-        return max(1, min(score, Tier.substring.rawValue - 51))
+        return Match(score: max(1, min(score, Tier.substring.rawValue - 51)), indices: indices)
     }
 }
