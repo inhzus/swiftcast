@@ -5,8 +5,7 @@ import SwiftUI
 /// App search: finds installed apps by fuzzy name, ranked by how often and how recently
 /// they were opened. ↩ opens the app, ⌘↩ shows it in Finder.
 ///
-/// Persists launch history under `launchHistory` and extra folders under `searchFolders` in
-/// the given defaults.
+/// Keeps launch history and extra search folders in its own database, `apps.db`.
 @MainActor
 public final class AppsPlugin: LauncherPlugin {
     public let id = "apps"
@@ -28,9 +27,21 @@ public final class AppsPlugin: LauncherPlugin {
     private var needsReindex = false
     private var lastIndexed: Date?
 
-    public init(defaults: UserDefaults = .standard) {
-        engine = SearchEngine(usage: UsageStore(defaults: defaults))
-        settings = AppsSettings(defaults: defaults)
+    /// Schema of `apps.db`; only ever append.
+    static let migrations = [
+        """
+        CREATE TABLE search_folders (path TEXT PRIMARY KEY, position INTEGER NOT NULL);
+        CREATE TABLE launches (app_id TEXT PRIMARY KEY, count INTEGER NOT NULL, last_used REAL NOT NULL);
+        """,
+    ]
+
+    public convenience init() {
+        self.init(database: .open("apps", migrations: Self.migrations))
+    }
+
+    init(database: Database) {
+        engine = SearchEngine(usage: UsageStore(database: database))
+        settings = AppsSettings(database: database)
         settings.onFoldersChange = { [weak self] in
             self?.lastIndexed = nil
             Task { await self?.reindex() }

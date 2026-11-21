@@ -6,7 +6,7 @@ import SwiftCastPluginKit
 final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private let settings = AppSettings()
     private let plugins = PluginRegistry.makePlugins()
-    private let queryHistory = QueryHistory()
+    private let queryHistory = QueryHistory(database: .open("swiftcast", migrations: QueryHistory.migrations))
     private lazy var model = LauncherViewModel(plugins: plugins, history: queryHistory)
     private lazy var launcher = LauncherViewController(model: model)
     private lazy var settingsWindow = SettingsWindowController { [unowned self] in

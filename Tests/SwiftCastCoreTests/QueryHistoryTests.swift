@@ -1,30 +1,35 @@
 import Foundation
+import SwiftCastPluginKit
 import Testing
 @testable import SwiftCastCore
 
 @MainActor
 struct QueryHistoryTests {
-    private let defaults = UserDefaults(suiteName: "SwiftCastTests-\(UUID().uuidString)")!
+    private let url = FileManager.default.temporaryDirectory
+        .appending(path: "SwiftCastTests-\(UUID().uuidString)/swiftcast.db")
+
+    /// A fresh connection to the same file each call, so reads after reopening come from disk.
+    private func database() -> Database { try! Database(url: url, migrations: QueryHistory.migrations) }
 
     @Test func recordsNewestFirstWithoutDuplicates() {
-        let history = QueryHistory(defaults: defaults)
+        let history = QueryHistory(database: database())
         for query in ["saf", "2*3", " saf ", "", "   "] { history.record(query) }
         #expect(history.entries == ["saf", "2*3"])
     }
 
     @Test func keepsAtMostTheLimit() {
-        let history = QueryHistory(defaults: defaults)
+        let history = QueryHistory(database: database())
         for i in 0..<(QueryHistory.limit + 5) { history.record("q\(i)") }
         #expect(history.entries.count == QueryHistory.limit)
         #expect(history.entries.first == "q\(QueryHistory.limit + 4)")
     }
 
     @Test func persistsAndClears() {
-        QueryHistory(defaults: defaults).record("saf")
-        let history = QueryHistory(defaults: defaults)
+        QueryHistory(database: database()).record("saf")
+        let history = QueryHistory(database: database())
         #expect(history.entries == ["saf"])
         history.clear()
-        #expect(QueryHistory(defaults: defaults).entries.isEmpty)
+        #expect(QueryHistory(database: database()).entries.isEmpty)
     }
 
     @Test func cursorStepsThroughHistoryLikeAShell() {

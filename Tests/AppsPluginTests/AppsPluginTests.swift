@@ -6,7 +6,7 @@ import Testing
 @MainActor
 struct AppsPluginTests {
     private func makePlugin(_ apps: [AppEntry]) -> AppsPlugin {
-        let plugin = AppsPlugin(defaults: UserDefaults(suiteName: "SwiftCastTests-\(UUID().uuidString)")!)
+        let plugin = AppsPlugin(database: .inMemory(migrations: AppsPlugin.migrations))
         plugin.engine.update(apps: apps)
         return plugin
     }

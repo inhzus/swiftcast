@@ -1,17 +1,25 @@
 import AppKit
 import Observation
+import SwiftCastPluginKit
 import SwiftUI
 
-/// App search preferences, persisted in `UserDefaults`.
+/// App search preferences, persisted in the `Database`.
 @MainActor
 @Observable
 final class AppsSettings {
-    @ObservationIgnored private let defaults: UserDefaults
+    @ObservationIgnored private let database: Database
 
     /// Folders searched for apps on top of `AppIndexer.defaultRoots`.
     var extraFolders: [URL] {
         didSet {
-            defaults.set(extraFolders.map(\.path), forKey: "searchFolders")
+            database.transaction {
+                database.execute("DELETE FROM search_folders")
+                for (position, folder) in extraFolders.enumerated() {
+                    database.execute(
+                        "INSERT OR IGNORE INTO search_folders (path, position) VALUES (?, ?)",
+                        [.text(folder.path), .int(Int64(position))])
+                }
+            }
             onFoldersChange()
         }
     }
@@ -24,9 +32,10 @@ final class AppsSettings {
     var confirmingClear = false
     var historyCleared = false
 
-    init(defaults: UserDefaults) {
-        self.defaults = defaults
-        extraFolders = (defaults.stringArray(forKey: "searchFolders") ?? []).map { URL(filePath: $0) }
+    init(database: Database) {
+        self.database = database
+        extraFolders = database.rows("SELECT path FROM search_folders ORDER BY position")
+            .compactMap { $0[0].text.map { URL(filePath: $0) } }
     }
 }
 
