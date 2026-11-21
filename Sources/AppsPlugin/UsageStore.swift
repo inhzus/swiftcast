@@ -27,6 +27,8 @@ final class UsageStore {
         }
     }
 
+    var isEmpty: Bool { records.isEmpty }
+
     func count(for id: String) -> Int {
         records[id]?.count ?? 0
     }
