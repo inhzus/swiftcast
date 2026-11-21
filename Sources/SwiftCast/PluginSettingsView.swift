@@ -52,12 +52,18 @@ struct PluginSettingsSections: View {
             }
         case .folders(let fixed, let editable, let addPrompt):
             ForEach(fixed, id: \.self) { folder in
-                Label(Self.displayPath(folder), systemImage: "folder")
-                    .foregroundStyle(.secondary)
+                HStack {
+                    folderLabel(folder).foregroundStyle(.secondary)
+                    Spacer()
+                    Image(systemName: "lock.fill")
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                        .help("Always searched")
+                }
             }
             ForEach(editable, id: \.self) { folder in
                 HStack {
-                    Label(Self.displayPath(folder), systemImage: "folder")
+                    folderLabel(folder)
                     Spacer()
                     Button {
                         set(row.id, .folders(editable.filter { $0 != folder }))
@@ -106,6 +112,15 @@ struct PluginSettingsSections: View {
     private func label(_ row: SettingsRow) -> some View {
         Text(row.title)
         if let detail = row.detail { Text(detail) }
+    }
+
+    /// A folder's path beside its Finder icon.
+    private func folderLabel(_ folder: URL) -> some View {
+        Label {
+            Text(Self.displayPath(folder))
+        } icon: {
+            Image(nsImage: IconCache.shared.icon(for: folder.path)).resizable().frame(width: 16, height: 16)
+        }
     }
 
     private func set(_ id: String, _ value: SettingsValue) {
