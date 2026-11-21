@@ -34,4 +34,13 @@ struct UsageStoreTests {
         UsageStore(defaults: defaults).increment("app", at: now)
         #expect(UsageStore(defaults: defaults).count(for: "app") == 1)
     }
+
+    @Test func clearForgetsEverything() {
+        let store = UsageStore(defaults: defaults)
+        store.increment("app", at: now)
+        store.clear()
+        #expect(store.count(for: "app") == 0)
+        #expect(store.boost(for: "app", at: now) == 0)
+        #expect(UsageStore(defaults: defaults).count(for: "app") == 0)
+    }
 }
