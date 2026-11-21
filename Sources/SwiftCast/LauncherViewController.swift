@@ -4,13 +4,13 @@ import SwiftCastCore
 /// The launcher's content: a search field over the results list and a footer of key hints.
 ///
 /// Plain AppKit on purpose. Every view is created up front, so typing only changes the
-/// content of existing views (see `ResultsListView`). The panel is as tall as its content:
-/// just the search field until there is something to show, then up to `maxVisibleRows` rows.
+/// content of existing views (see `ResultsListView`). The panel is just the search field until
+/// there is something to show, then a fixed `maxVisibleRows` rows tall, however many results
+/// there are: resizing a window costs one to two frames on screen, felt as lag while typing.
 @MainActor
 final class LauncherViewController: NSViewController, NSTextFieldDelegate {
     static let headerHeight: CGFloat = 60
     static let footerHeight: CGFloat = 32
-    static let messageHeight: CGFloat = 64
     static let maxVisibleRows = 8
 
     let model: LauncherViewModel
@@ -144,13 +144,10 @@ final class LauncherViewController: NSViewController, NSTextFieldDelegate {
         }
     }
 
-    /// The panel height that fits the current content.
+    /// The panel height for the current content: the search field alone, or full height.
     private var preferredHeight: CGFloat {
-        if !model.results.isEmpty {
-            let rows = min(model.results.count, Self.maxVisibleRows)
-            return Self.headerHeight + 1 + ResultsListView.height(forRows: rows) + Self.footerHeight
-        }
-        return model.query.isEmpty ? Self.headerHeight : Self.headerHeight + Self.messageHeight
+        if model.results.isEmpty && model.query.isEmpty { return Self.headerHeight }
+        return Self.headerHeight + 1 + ResultsListView.height(forRows: Self.maxVisibleRows) + Self.footerHeight
     }
 
     /// Exercises the typing path once (focus, insert text, search, fill rows) so its one-time
