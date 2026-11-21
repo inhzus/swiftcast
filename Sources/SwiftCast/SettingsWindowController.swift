@@ -28,12 +28,20 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
     }
 
     private func makeWindow() -> NSWindow {
-        let window = NSWindow(contentViewController: NSHostingController(rootView: makeView()))
+        let window = SettingsWindow(contentViewController: NSHostingController(rootView: makeView()))
         window.title = "SwiftCast Settings"
         window.styleMask = [.titled, .closable]
         window.isReleasedWhenClosed = false
         window.delegate = self
         window.center()
         return window
+    }
+}
+
+/// Closes on Esc, like a settings window should. The shortcut recorder gets Esc first while
+/// it's recording, so there Esc only cancels the recording.
+private final class SettingsWindow: NSWindow {
+    override func cancelOperation(_ sender: Any?) {
+        performClose(sender)
     }
 }
