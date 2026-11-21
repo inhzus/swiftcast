@@ -7,10 +7,13 @@ import SwiftUI
 /// What the Settings window asks the app to do; supplied by `AppDelegate`.
 @MainActor
 struct SettingsActions {
-    /// Registers `shortcut` as the global hotkey; false if another app already holds it.
-    var setShortcut: (Shortcut) -> Bool
-    /// Suspends the global hotkey while the recorder listens, and restores it afterwards.
+    /// Registers `shortcut` as the global hotkey, or returns why it can't be used.
+    var setShortcut: (Shortcut) -> String?
+    /// Suspends the global hotkeys while the recorder listens, and restores them afterwards.
     var setRecording: (Bool) -> Void
+    /// Sets, or with `nil` turns off, the global hotkey that opens a plugin's view (by
+    /// plugin ID), or returns why it can't be used.
+    var setViewShortcut: (Shortcut?, String) -> String?
     var clearSearchHistory: () -> Void
     var clearUsage: () -> Void
 }
@@ -28,6 +31,8 @@ enum SettingsPage: Hashable {
 private final class SettingsViewState {
     var page: SettingsPage? = .general
     var shortcutError: String?
+    /// Why a plugin's view shortcut couldn't be set, by plugin ID.
+    var viewShortcutErrors: [String: String] = [:]
     var launchAtLogin = SMAppService.mainApp.status == .enabled
     var loginError: String?
     var confirmingClear = false
@@ -184,6 +189,27 @@ struct SettingsView {
                     set: { setEnabled($0, plugin.id) }
                 ))
             }
+            if let viewTitle = plugin.viewTitle {
+                Section {
+                    LabeledContent("Open \(viewTitle)") {
+                        HStack {
+                            ShortcutRecorder(
+                                shortcut: settings.viewShortcut(for: plugin),
+                                onRecord: { setViewShortcut($0, plugin.id) },
+                                onRecordingChange: actions.setRecording
+                            )
+                            .fixedSize()
+                            Button("Clear") { setViewShortcut(nil, plugin.id) }
+                                .disabled(settings.viewShortcut(for: plugin) == nil)
+                            Button("Reset") { setViewShortcut(plugin.defaultViewShortcut, plugin.id) }
+                                .disabled(settings.viewShortcut(for: plugin) == plugin.defaultViewShortcut)
+                        }
+                    }
+                    if let error = state.viewShortcutErrors[plugin.id] {
+                        ErrorText(error)
+                    }
+                }
+            }
             PluginSettingsSections(plugin: plugin, state: pluginState)
         }
         .formStyle(.grouped)
@@ -210,8 +236,10 @@ struct SettingsView {
 
     private func setShortcut(_ shortcut: Shortcut) {
         state.shortcutError = actions.setShortcut(shortcut)
-            ? nil
-            : "\(shortcut.displayString) is already used by another app."
+    }
+
+    private func setViewShortcut(_ shortcut: Shortcut?, _ pluginID: String) {
+        state.viewShortcutErrors[pluginID] = actions.setViewShortcut(shortcut, pluginID)
     }
 
     private func setLaunchAtLogin(_ enabled: Bool) {

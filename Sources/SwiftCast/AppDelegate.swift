@@ -15,8 +15,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         SettingsView(settings: settings, plugins: plugins, actions: SettingsActions(
             setShortcut: { [unowned self] in setShortcut($0) },
             setRecording: { [unowned self] recording in
-                if recording { hotKey = nil } else { registerHotKey(settings.shortcut) }
+                if recording {
+                    hotKey = nil
+                    viewHotKeys = [:]
+                } else {
+                    registerHotKey(settings.shortcut)
+                    registerViewHotKeys()
+                }
             },
+            setViewShortcut: { [unowned self] in setViewShortcut($0, for: $1) },
             clearSearchHistory: { [unowned self] in
                 queryHistory.clear()
                 model.refresh()
@@ -31,6 +38,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var statusItem: NSStatusItem?
     private var openMenuItem: NSMenuItem?
     private var hotKey: HotKey?
+    /// Hotkeys that open plugins' views, by plugin ID; only enabled plugins have one.
+    private var viewHotKeys: [String: HotKey] = [:]
     /// The startup sequence has run; until then it preloads icons itself.
     private var didActivate = false
     /// Plugins whose `activate` has been called. A plugin that starts disabled is activated
@@ -49,6 +58,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         if !registerHotKey(settings.shortcut) {
             NSLog("SwiftCast: failed to register \(settings.shortcut.displayString) hotkey (already in use?)")
         }
+        registerViewHotKeys()
         activatePlugins()
 
         if CommandLine.arguments.contains("--show") {
@@ -91,12 +101,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
     }
 
-    private func showPanel() {
+    /// Shows the panel: with `view`, that plugin's view; otherwise the search, brought back
+    /// from last time when the panel closed recently.
+    private func showPanel(view: (any LauncherPlugin)? = nil) {
         guard let panel else { return }
         // Reset and lay out before ordering front, so the first frame shown is already correct.
         let interval = settings.restoreInterval
-        let restoring = interval > 0 && lastHidden.map { Date().timeIntervalSince($0) < interval } == true
+        let restoring = view == nil && interval > 0
+            && lastHidden.map { Date().timeIntervalSince($0) < interval } == true
         launcher.prepareForShow(restoring: restoring)
+        if let view { model.open(view) }
         PerfLog.measure("layout") { panel.contentView?.layoutSubtreeIfNeeded() }
         panel.positionOnActiveScreen()
         // A non-activating panel can become key without activating the app, which skips an
@@ -106,6 +120,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         launcher.animateIn()
         DispatchQueue.main.async { [weak self] in
             for plugin in self?.enabledPlugins ?? [] { plugin.panelDidShow() }
+        }
+    }
+
+    /// A plugin view's hotkey: opens the panel on that view, or closes the panel when it's
+    /// already showing it.
+    private func toggleView(_ plugin: any LauncherPlugin) {
+        guard let panel else { return }
+        let isShowing = panel.isVisible && !isHiding
+        if isShowing {
+            if model.openView?.id == plugin.id { hidePanel() } else { model.open(plugin) }
+        } else {
+            showPanel(view: plugin)
         }
     }
 
@@ -150,19 +176,82 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         settingsWindow.show()
     }
 
-    /// Registers `shortcut` and saves it; on failure the previous shortcut stays registered.
-    private func setShortcut(_ shortcut: Shortcut) -> Bool {
+    /// Registers `shortcut` and saves it, or returns why it can't be used; on failure the
+    /// previous shortcut stays registered.
+    private func setShortcut(_ shortcut: Shortcut) -> String? {
+        if let plugin = plugins.first(where: { settings.viewShortcut(for: $0) == shortcut }) {
+            return "\(shortcut.displayString) already opens \(plugin.viewTitle ?? plugin.name)."
+        }
         guard registerHotKey(shortcut) else {
             registerHotKey(settings.shortcut)
-            return false
+            return "\(shortcut.displayString) is already used by another app."
         }
         settings.shortcut = shortcut
-        return true
+        return nil
+    }
+
+    /// Sets, or with `nil` turns off, the shortcut that opens a plugin's view, or returns why
+    /// it can't be used; on failure the previous one stays.
+    private func setViewShortcut(_ shortcut: Shortcut?, for pluginID: String) -> String? {
+        guard let plugin = plugins.first(where: { $0.id == pluginID }) else { return nil }
+        if let shortcut {
+            if shortcut == settings.shortcut {
+                return "\(shortcut.displayString) already opens SwiftCast."
+            }
+            if let other = plugins.first(where: { $0.id != pluginID && settings.viewShortcut(for: $0) == shortcut }) {
+                return "\(shortcut.displayString) already opens \(other.viewTitle ?? other.name)."
+            }
+        }
+        if enabledPlugins.contains(where: { $0.id == pluginID }) {
+            viewHotKeys[pluginID] = nil
+            if let shortcut {
+                guard let hotKey = makeViewHotKey(shortcut, for: plugin) else {
+                    viewHotKeys[pluginID] = settings.viewShortcut(for: plugin).flatMap { makeViewHotKey($0, for: plugin) }
+                    return "\(shortcut.displayString) is already used by another app."
+                }
+                viewHotKeys[pluginID] = hotKey
+            }
+        }
+        // `.some`: assigning a bare `nil` would remove the entry, bringing back the default.
+        settings.viewShortcuts[pluginID] = .some(shortcut)
+        updateShortcutHints()
+        return nil
+    }
+
+    /// Registers the view shortcuts of the enabled plugins, replacing any registered before.
+    private func registerViewHotKeys() {
+        viewHotKeys = [:]
+        for plugin in enabledPlugins {
+            guard let shortcut = settings.viewShortcut(for: plugin), shortcut != settings.shortcut else { continue }
+            if let hotKey = makeViewHotKey(shortcut, for: plugin) {
+                viewHotKeys[plugin.id] = hotKey
+            } else {
+                NSLog("SwiftCast: failed to register \(shortcut.displayString) hotkey (already in use?)")
+            }
+        }
+        updateShortcutHints()
+    }
+
+    /// Tells the launcher which rows to label with a view shortcut.
+    private func updateShortcutHints() {
+        var hints: [String: String] = [:]
+        for plugin in enabledPlugins {
+            if let shortcut = settings.viewShortcut(for: plugin) { hints[plugin.id] = shortcut.displayString }
+        }
+        guard hints != model.viewShortcuts else { return }
+        model.viewShortcuts = hints
+        model.refresh()
+    }
+
+    private func makeViewHotKey(_ shortcut: Shortcut, for plugin: any LauncherPlugin) -> HotKey? {
+        HotKey(keyCode: shortcut.keyCode, modifiers: shortcut.modifiers) { [weak self, weak plugin] in
+            if let plugin { self?.toggleView(plugin) }
+        }
     }
 
     @discardableResult
     private func registerHotKey(_ shortcut: Shortcut) -> Bool {
-        // Release the old hotkey first: its handler fires for any SwiftCast hotkey.
+        // Release the old hotkey first, in case it's the same combination.
         hotKey = nil
         hotKey = HotKey(keyCode: shortcut.keyCode, modifiers: shortcut.modifiers) { [weak self] in
             self?.togglePanel()
@@ -225,6 +314,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             activatedIDs.remove(plugin.id)
         }
         if let view = model.openView, !model.enabledIDs.contains(view.id) { model.closeView() }
+        registerViewHotKeys()
         model.refresh()
         guard didActivate else { return }
         Task {

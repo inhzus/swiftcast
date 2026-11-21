@@ -13,6 +13,13 @@ final class ResultsListView: NSView {
     static let rowSpacing: CGFloat = 2
     static let inset: CGFloat = 8
 
+    /// A row's content: the plugin's item, and the global shortcut that does the same as ↩
+    /// on it, if any, shown at the trailing edge.
+    struct Row: Hashable {
+        var result: ResultItem
+        var shortcut: String?
+    }
+
     var onClick: (Int) -> Void = { _ in }
     /// Called when the mouse moves onto a row. Only real movement reports, so a resting
     /// pointer doesn't take the selection from the keyboard as rows change under it.
@@ -59,7 +66,7 @@ final class ResultsListView: NSView {
     }
 
     /// Shows `items`, touching only rows whose content changed.
-    func update(_ items: [ResultItem]) {
+    func update(_ items: [Row]) {
         if items.count > rows.count { addRows(items.count - rows.count) }
         let newCount = items.count
         for index in 0..<newCount {
@@ -152,8 +159,8 @@ final class ResultsListView: NSView {
 }
 
 /// Icon and title, with the highlighted characters (such as the letters that matched the
-/// query) in bold, plus grey detail text. Laid out with frames, which is cheaper than
-/// constraints for a view this simple.
+/// query) in bold, plus grey detail text and, at the trailing edge, a shortcut. Laid out with
+/// frames, which is cheaper than constraints for a view this simple.
 private final class ResultRowView: NSView {
     private static let nameFont = NSFont.systemFont(ofSize: 14)
     private static let matchFont = NSFont.systemFont(ofSize: 14, weight: .bold)
@@ -163,7 +170,8 @@ private final class ResultRowView: NSView {
     private let icon = NSImageView()
     private let nameLabel = NSTextField(labelWithString: "")
     private let detailLabel = NSTextField(labelWithString: "")
-    private var item: ResultItem?
+    private let shortcutLabel = NSTextField(labelWithString: "")
+    private var row: ResultsListView.Row?
 
     init() {
         super.init(frame: .zero)
@@ -171,22 +179,28 @@ private final class ResultRowView: NSView {
         detailLabel.font = .systemFont(ofSize: 12)
         detailLabel.textColor = .tertiaryLabelColor
         detailLabel.lineBreakMode = .byTruncatingMiddle
-        for view in [icon, nameLabel, detailLabel] { addSubview(view) }
+        shortcutLabel.font = .systemFont(ofSize: 12)
+        shortcutLabel.textColor = .secondaryLabelColor
+        shortcutLabel.alignment = .right
+        for view in [icon, nameLabel, detailLabel, shortcutLabel] { addSubview(view) }
     }
 
     required init?(coder: NSCoder) {
         fatalError("init(coder:) is not used")
     }
 
-    func configure(with item: ResultItem) {
-        guard item != self.item else { return }
-        if self.item?.icon != item.icon {
+    func configure(with row: ResultsListView.Row) {
+        guard row != self.row else { return }
+        let item = row.result
+        if self.row?.result.icon != item.icon {
             icon.image = Self.image(for: item.icon)
         }
-        self.item = item
+        self.row = row
         nameLabel.attributedStringValue = Self.name(item.title, bolding: item.highlightedIndices)
         detailLabel.stringValue = item.detail ?? ""
         detailLabel.isHidden = item.detail == nil
+        shortcutLabel.stringValue = row.shortcut ?? ""
+        shortcutLabel.isHidden = row.shortcut == nil
         needsLayout = true
     }
 
@@ -226,8 +240,13 @@ private final class ResultRowView: NSView {
     override func layout() {
         super.layout()
         let textX: CGFloat = 54
-        let maxX = bounds.width - 12
+        var maxX = bounds.width - 12
         let y = (bounds.height - 18) / 2
+        if !shortcutLabel.isHidden {
+            let width = ceil(shortcutLabel.intrinsicContentSize.width) + 4
+            shortcutLabel.frame = NSRect(x: maxX - width, y: y, width: width, height: 17)
+            maxX -= width + 12
+        }
         icon.frame = NSRect(x: 10, y: (bounds.height - 32) / 2, width: 32, height: 32)
         var nameWidth = max(maxX - textX, 0)
         if !detailLabel.isHidden {

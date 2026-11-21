@@ -1,10 +1,11 @@
 import AppKit
-import SwiftCastCore
+import SwiftCastPluginKit
 import SwiftUI
 
 /// A button that shows a shortcut and, once clicked, records the next key combination.
 struct ShortcutRecorder: NSViewRepresentable {
-    var shortcut: Shortcut
+    /// `nil` shows a prompt to record one.
+    var shortcut: Shortcut?
     /// Called with a valid recorded shortcut.
     var onRecord: (Shortcut) -> Void
     /// Called when recording starts and stops, so the global hotkey can step aside meanwhile.
@@ -28,7 +29,7 @@ struct ShortcutRecorder: NSViewRepresentable {
 final class RecorderButton: NSButton {
     var onRecord: (Shortcut) -> Void = { _ in }
     var onRecordingChange: (Bool) -> Void = { _ in }
-    var shortcut = Shortcut.default {
+    var shortcut: Shortcut? = .default {
         didSet { if shortcut != oldValue { updateTitle() } }
     }
 
@@ -103,7 +104,7 @@ final class RecorderButton: NSButton {
     }
 
     private func updateTitle() {
-        title = isRecording ? (hint ?? "Type shortcut…") : shortcut.displayString
+        title = isRecording ? (hint ?? "Type shortcut…") : shortcut?.displayString ?? "Record Shortcut"
         invalidateIntrinsicContentSize()
     }
 }

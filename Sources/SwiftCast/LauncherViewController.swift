@@ -384,7 +384,9 @@ final class LauncherViewController: NSViewController, NSTextFieldDelegate {
         // Empty results only hide the list, leaving its rows as they are, so the next query
         // changes as few rows as possible.
         if !model.items.isEmpty {
-            PerfLog.measure("reload") { resultsList.update(model.items.map(\.result)) }
+            PerfLog.measure("reload") {
+                resultsList.update(model.items.map { ResultsListView.Row(result: $0.result, shortcut: model.shortcut(for: $0)) })
+            }
         }
         let hasQuery = !model.query.isEmpty
         if clearButton.isHidden == hasQuery {

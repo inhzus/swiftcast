@@ -28,6 +28,9 @@ public protocol LauncherPlugin: AnyObject {
     /// Heading and search placeholder of the plugin's own view (see `Effect.openView`), e.g.
     /// "Clipboard History". `nil` when it has no view.
     var viewTitle: String? { get }
+    /// Global shortcut that opens the plugin's view, until the user changes it in Settings.
+    /// `nil` for none.
+    var defaultViewShortcut: Shortcut? { get }
 
     /// Called once, at launch or when the plugin is first enabled. Loads whatever the plugin
     /// needs (an index, say); at launch the app prewarms the panel after every enabled plugin
@@ -61,6 +64,7 @@ public protocol LauncherPlugin: AnyObject {
 public extension LauncherPlugin {
     var emptyQueryTitle: String? { nil }
     var viewTitle: String? { nil }
+    var defaultViewShortcut: Shortcut? { nil }
     func activate(_ context: PluginContext) async {}
     func viewResults(for query: String) -> [ResultItem] { [] }
     func deactivate() {}

@@ -35,6 +35,9 @@ final class LauncherViewModel {
     /// only to it while it's open.
     private(set) var openView: (any LauncherPlugin)?
 
+    /// The shortcuts that open plugins' views, as shown, by plugin ID.
+    var viewShortcuts: [String: String] = [:]
+
     var onResultsChange: () -> Void = {}
     var onSelectionChange: () -> Void = {}
     var onDismiss: () -> Void = {}
@@ -62,6 +65,13 @@ final class LauncherViewModel {
     func reset() {
         historyCursor.reset()
         openView = nil
+        query = ""
+    }
+
+    /// Shows `plugin`'s own view, with an empty search.
+    func open(_ plugin: any LauncherPlugin) {
+        historyCursor.reset()
+        openView = plugin
         query = ""
     }
 
@@ -122,6 +132,13 @@ final class LauncherViewModel {
         selection = min(max(selection + delta, 0), items.count - 1)
     }
 
+    /// The global shortcut that does what ↩ does on `item`, as shown: its plugin's view
+    /// shortcut, on the row that opens the view.
+    func shortcut(for item: LauncherItem) -> String? {
+        guard openView == nil, item.result.actions.first?.effect == .openView else { return nil }
+        return viewShortcuts[item.pluginID]
+    }
+
     /// The plugin that `item` came from.
     func plugin(for item: LauncherItem) -> (any LauncherPlugin)? {
         pluginsByID[item.pluginID]
@@ -145,9 +162,7 @@ final class LauncherViewModel {
         }
         if action.effect == .openView, let plugin = plugin(for: item) {
             history.record(query)
-            historyCursor.reset()
-            openView = plugin
-            query = ""
+            open(plugin)
             return
         }
         if openView == nil { history.record(query) }

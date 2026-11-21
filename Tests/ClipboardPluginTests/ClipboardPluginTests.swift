@@ -94,6 +94,12 @@ struct ClipboardPluginTests {
             imageDirectory: FileManager.default.temporaryDirectory.appending(path: "SwiftCastTests-\(UUID().uuidString)"))
     }
 
+    @Test func opensWithControlOptionShiftCommandC() {
+        let plugin = makePlugin()
+        #expect(plugin.defaultViewShortcut == Shortcut(
+            keyCode: 8, modifiers: Shortcut.control | Shortcut.option | Shortcut.shift | Shortcut.command))
+    }
+
     @Test func commandRowOpensTheView() {
         let plugin = makePlugin()
         for query in ["cl", "Clip", "clipboard h", "hist"] {
