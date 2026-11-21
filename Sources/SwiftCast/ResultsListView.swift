@@ -5,7 +5,8 @@ import SwiftCastCore
 ///
 /// Results are capped (`SearchEngine.results(limit:)`), so the list never needs more rows
 /// than the pool holds. Updating it sets the content of rows whose app changed and hides
-/// the rest, so no views are created or torn down while the user types.
+/// the rest, so no views are created or torn down while the user types. One highlight view
+/// behind the rows marks the selection, and slides when the selection moves.
 final class ResultsListView: NSView {
     static let rowHeight: CGFloat = 44
     static let rowSpacing: CGFloat = 2
@@ -22,12 +23,15 @@ final class ResultsListView: NSView {
     }
 
     private let rows: [ResultRowView]
+    private let highlight = SelectionHighlight()
     private var count = 0
     private var selectedIndex: Int?
 
     init(capacity: Int) {
         rows = (0..<capacity).map { _ in ResultRowView() }
         super.init(frame: .zero)
+        highlight.isHidden = true
+        addSubview(highlight)
         for (index, row) in rows.enumerated() {
             row.isHidden = true
             row.onClick = { [unowned self] in onClick(index) }
@@ -68,14 +72,29 @@ final class ResultsListView: NSView {
         }
     }
 
-    func select(_ index: Int?) {
+    /// Highlights row `index`, sliding the highlight there when `animated` (the selection
+    /// moved) or jumping when not (new results replaced the rows).
+    func select(_ index: Int?, animated: Bool) {
         let index = index.flatMap { $0 < count ? $0 : nil }
-        if index != selectedIndex {
-            if let old = selectedIndex { rows[old].isSelected = false }
-            if let index { rows[index].isSelected = true }
-            selectedIndex = index
+        guard let index else {
+            highlight.isHidden = true
+            selectedIndex = nil
+            return
         }
-        reveal(index.map { rows[$0].frame.insetBy(dx: 0, dy: -Self.inset) } ?? .zero)
+        let target = rows[index].frame
+        if animated && !highlight.isHidden && highlight.frame != target {
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = 0.12
+                context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+                highlight.animator().frame = target
+            }
+        } else {
+            highlight.layer?.removeAllAnimations()
+            highlight.frame = target
+        }
+        highlight.isHidden = false
+        selectedIndex = index
+        reveal(target.insetBy(dx: 0, dy: -Self.inset))
     }
 
     /// Scrolls the minimum distance to show `rect`, immediately. `scrollToVisible` animates,
@@ -126,17 +145,13 @@ final class ResultsListView: NSView {
 
 /// Icon and app name, with the letters that matched the query in bold, plus grey detail
 /// text for apps that share a name. A calculation shows its result, with the expression as
-/// the detail. A soft rounded highlight marks the selection.
-/// Laid out with frames, which is cheaper than constraints for a view this simple.
+/// the detail. Laid out with frames, which is cheaper than constraints for a view this simple.
 private final class ResultRowView: NSView {
     private static let nameFont = NSFont.systemFont(ofSize: 14)
     private static let matchFont = NSFont.systemFont(ofSize: 14, weight: .bold)
     private static let calculatorPath = "/System/Applications/Calculator.app"
 
     var onClick: () -> Void = {}
-    var isSelected = false {
-        didSet { if isSelected != oldValue { needsDisplay = true } }
-    }
 
     private let icon = NSImageView()
     private let nameLabel = NSTextField(labelWithString: "")
@@ -202,12 +217,6 @@ private final class ResultRowView: NSView {
         return text
     }
 
-    override func draw(_ dirtyRect: NSRect) {
-        guard isSelected else { return }
-        NSColor.labelColor.withAlphaComponent(0.1).setFill()
-        NSBezierPath(roundedRect: bounds, xRadius: 8, yRadius: 8).fill()
-    }
-
     override func mouseDown(with event: NSEvent) {
         onClick()
     }
@@ -225,5 +234,26 @@ private final class ResultRowView: NSView {
             detailLabel.frame = NSRect(x: detailX, y: y, width: max(maxX - detailX, 0), height: 17)
         }
         nameLabel.frame = NSRect(x: textX, y: y, width: nameWidth, height: 18)
+    }
+}
+
+/// The rounded highlight behind the selected row.
+private final class SelectionHighlight: NSView {
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        wantsLayer = true
+        layer?.cornerRadius = 10
+        layer?.cornerCurve = .continuous
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) is not used")
+    }
+
+    override var wantsUpdateLayer: Bool { true }
+
+    // Runs with the view's appearance current, so the color follows light and dark.
+    override func updateLayer() {
+        layer?.backgroundColor = NSColor.labelColor.withAlphaComponent(0.1).cgColor
     }
 }

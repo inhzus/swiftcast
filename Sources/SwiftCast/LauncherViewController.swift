@@ -1,31 +1,43 @@
 import AppKit
 import SwiftCastCore
 
-/// The launcher's content: a search field over the results list and a footer of key hints.
+/// The launcher's content, Spotlight-style: a glass search capsule, and below it a glass card
+/// with the results, a section heading and key hints.
 ///
 /// Plain AppKit on purpose. Every view is created up front, so typing only changes the
-/// content of existing views (see `ResultsListView`). The panel is just the search field until
-/// there is something to show, then a fixed `maxVisibleRows` rows tall, however many results
-/// there are: resizing a window costs one to two frames on screen, felt as lag while typing.
+/// content of existing views (see `ResultsListView`). The window never resizes (see
+/// `LauncherPanel`); the card fits its content and animates to new sizes with Core Animation.
 @MainActor
 final class LauncherViewController: NSViewController, NSTextFieldDelegate {
-    static let headerHeight: CGFloat = 60
-    static let footerHeight: CGFloat = 32
+    static let width: CGFloat = 680
+    /// Transparent space around the surfaces, for their shadows.
+    static let margin: CGFloat = 40
+    static let capsuleHeight: CGFloat = 56
+    static let cardGap: CGFloat = 8
+    static let cardHeaderHeight: CGFloat = 26
+    static let cardHintsHeight: CGFloat = 36
+    static let emptyCardHeight: CGFloat = 64
     static let maxVisibleRows = 8
+
+    static var maxCardHeight: CGFloat {
+        cardHeaderHeight + ResultsListView.height(forRows: maxVisibleRows) + cardHintsHeight
+    }
+
+    static var windowSize: NSSize {
+        NSSize(width: width + margin * 2, height: margin * 2 + capsuleHeight + cardGap + maxCardHeight)
+    }
 
     let model: LauncherViewModel
     let searchField = SearchField()
-    /// Called with the height the panel should have whenever the content changes.
-    var onHeightChange: (CGFloat) -> Void = { _ in }
 
-    private let resultsList = ResultsListView(capacity: LauncherViewModel.itemLimit)
-    /// What the views outside the list currently show; see `resultsChanged()`.
-    private struct Chrome: Equatable {
-        var isEmpty: Bool
-        var hasQuery: Bool
+    /// What the card shows; each state has its own height (see `height(for:)`).
+    private enum CardState: Equatable {
+        case hidden
+        case empty
+        case results(rows: Int)
     }
-    private var lastChrome: Chrome?
-    /// What the footer currently shows; see `selectionChanged()`.
+    private var cardState = CardState.hidden
+    /// What the heading and hints currently show; see `selectionChanged(animated:)`.
     private struct Footer: Equatable {
         var label: String
         var isCalculation: Bool
@@ -33,9 +45,17 @@ final class LauncherViewController: NSViewController, NSTextFieldDelegate {
     private var lastFooter: Footer?
     private static let appHints = [("↩", "Open"), ("⌘↩", "Show in Finder"), ("esc", "Close")]
     private static let calculationHints = [("↩", "Copy"), ("esc", "Close")]
+
+    /// Whether the panel is on screen, so changes animate. Off while it's prepared for showing.
+    private var isPresented = false
+    /// Bumped on every show, so a fade-out that finishes after a reopen doesn't hide the panel.
+    private var presentation = 0
+
+    private let resultsList = ResultsListView(capacity: LauncherViewModel.itemLimit)
+    private var card = NSView()
+    private var cardContent = NSView()
+    private let cardBody = NSView()
     private let scrollView = NSScrollView()
-    private let headerSeparator = NSBox()
-    private let footerSeparator = NSBox()
     private let emptyLabel = NSTextField(labelWithString: "No matching applications")
     private let sectionLabel = NSTextField(labelWithString: "")
     private let hintsView = KeyHintsView(hints: LauncherViewController.appHints)
@@ -54,11 +74,55 @@ final class LauncherViewController: NSViewController, NSTextFieldDelegate {
         fatalError("init(coder:) is not used")
     }
 
-    override func loadView() {
-        let root = NSView(frame: NSRect(x: 0, y: 0, width: LauncherPanel.width, height: Self.headerHeight))
+    private static var capsuleFrame: NSRect {
+        NSRect(x: margin, y: windowSize.height - margin - capsuleHeight, width: width, height: capsuleHeight)
+    }
 
+    private static func height(for state: CardState) -> CGFloat {
+        switch state {
+        case .hidden: 0
+        case .empty: emptyCardHeight
+        case .results(let rows):
+            cardHeaderHeight + ResultsListView.height(forRows: min(rows, maxVisibleRows)) + cardHintsHeight
+        }
+    }
+
+    /// The card's frame for `height`, hanging below the capsule.
+    private static func cardFrame(height: CGFloat) -> NSRect {
+        NSRect(x: margin, y: capsuleFrame.minY - cardGap - height, width: width, height: height)
+    }
+
+    override func loadView() {
+        let root = NSView(frame: NSRect(origin: .zero, size: Self.windowSize))
+        root.wantsLayer = true
+
+        let (container, surfaces) = GlassSurface.container()
+        container.frame = root.bounds
+        container.autoresizingMask = [.width, .height]
+        root.addSubview(container)
+
+        let (capsule, capsuleContent) = GlassSurface.make(cornerRadius: Self.capsuleHeight / 2)
+        capsule.frame = Self.capsuleFrame
+        surfaces.addSubview(capsule)
+        setUpCapsule(capsuleContent)
+
+        let (card, cardContent) = GlassSurface.make(cornerRadius: 22)
+        card.wantsLayer = true
+        card.isHidden = true
+        surfaces.addSubview(card)
+        self.card = card
+        self.cardContent = cardContent
+        setUpCard()
+
+        view = root
+        model.onResultsChange = { [unowned self] in resultsChanged() }
+        model.onSelectionChange = { [unowned self] in selectionChanged(animated: true) }
+        resultsChanged()
+    }
+
+    private func setUpCapsule(_ content: NSView) {
         let icon = NSImageView(image: NSImage(systemSymbolName: "magnifyingglass", accessibilityDescription: "Search")!)
-        icon.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 20, weight: .regular)
+        icon.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 20, weight: .medium)
         icon.contentTintColor = .secondaryLabelColor
 
         searchField.delegate = self
@@ -72,11 +136,20 @@ final class LauncherViewController: NSViewController, NSTextFieldDelegate {
         clearButton.target = self
         clearButton.action = #selector(clearQuery)
         clearButton.toolTip = "Clear search"
+        clearButton.isHidden = true
 
-        headerSeparator.boxType = .separator
-        footerSeparator.boxType = .separator
+        // The capsule never changes size, so these frames are set once.
+        let height = Self.capsuleHeight
+        icon.frame = NSRect(x: 20, y: (height - 24) / 2, width: 24, height: 24)
+        clearButton.frame = NSRect(x: Self.width - 40, y: (height - 20) / 2, width: 20, height: 20)
+        searchField.frame = NSRect(x: 54, y: (height - 32) / 2, width: Self.width - 54 - 48, height: 32)
+        for view in [icon, searchField, clearButton] as [NSView] {
+            content.addSubview(view)
+        }
+    }
 
-        resultsList.frame = NSRect(x: 0, y: 0, width: LauncherPanel.width, height: 0)
+    private func setUpCard() {
+        resultsList.frame = NSRect(x: 0, y: 0, width: Self.width, height: 0)
         resultsList.onClick = { [unowned self] index in
             guard model.items.indices.contains(index) else { return }
             model.selection = index
@@ -93,58 +166,39 @@ final class LauncherViewController: NSViewController, NSTextFieldDelegate {
 
         emptyLabel.textColor = .secondaryLabelColor
         emptyLabel.alignment = .center
-        sectionLabel.font = .systemFont(ofSize: 11, weight: .medium)
-        sectionLabel.textColor = .tertiaryLabelColor
+        sectionLabel.font = .systemFont(ofSize: 11, weight: .semibold)
+        sectionLabel.textColor = .secondaryLabelColor
 
-        // The header uses constraints; the body below it is laid out by frame in
-        // `viewDidLayout()`, since parts of it come and go as the panel changes height.
-        for view in [icon, searchField, clearButton] as [NSView] {
-            view.translatesAutoresizingMaskIntoConstraints = false
-            root.addSubview(view)
+        // The body is laid out at the card's target size and pinned to its top, so while the
+        // card animates to a new height its content is revealed or clipped, never stretched.
+        cardBody.autoresizingMask = [.width, .minYMargin]
+        for view in [sectionLabel, scrollView, emptyLabel, hintsView] as [NSView] {
+            cardBody.addSubview(view)
         }
-        for view in [headerSeparator, scrollView, emptyLabel, footerSeparator, sectionLabel, hintsView] as [NSView] {
-            root.addSubview(view)
-        }
-        NSLayoutConstraint.activate([
-            icon.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 18),
-            icon.centerYAnchor.constraint(equalTo: searchField.centerYAnchor),
-            icon.widthAnchor.constraint(equalToConstant: 24),
-
-            searchField.leadingAnchor.constraint(equalTo: icon.trailingAnchor, constant: 10),
-            searchField.trailingAnchor.constraint(equalTo: clearButton.leadingAnchor, constant: -8),
-            searchField.topAnchor.constraint(equalTo: root.topAnchor, constant: 16),
-            searchField.heightAnchor.constraint(equalToConstant: 28),
-
-            clearButton.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -18),
-            clearButton.centerYAnchor.constraint(equalTo: searchField.centerYAnchor),
-            clearButton.widthAnchor.constraint(equalToConstant: 20),
-        ])
-
-        view = root
-        model.onResultsChange = { [unowned self] in resultsChanged() }
-        model.onSelectionChange = { [unowned self] in selectionChanged() }
-        resultsChanged()
+        cardContent.addSubview(cardBody)
     }
 
-    override func viewDidLayout() {
-        super.viewDidLayout()
-        let width = view.bounds.width
-        let bodyTop = view.bounds.height - Self.headerHeight
-        headerSeparator.frame = NSRect(x: 0, y: bodyTop - 1, width: width, height: 1)
+    /// Lays out the card's content for `state`, at its final height.
+    private func layOutCardBody(for state: CardState) {
+        let width = Self.width
+        let height = Self.height(for: state)
+        cardBody.frame = NSRect(x: 0, y: cardContent.bounds.height - height, width: width, height: height)
 
-        let footerHeight = footerSeparator.isHidden ? 0 : Self.footerHeight
-        footerSeparator.frame = NSRect(x: 0, y: footerHeight - 1, width: width, height: 1)
-        sectionLabel.frame = NSRect(x: 18, y: (footerHeight - 15) / 2, width: 200, height: 15)
-        let hintsSize = hintsView.intrinsicContentSize
-        hintsView.frame = NSRect(
-            x: width - 18 - hintsSize.width,
-            y: (footerHeight - hintsSize.height) / 2,
-            width: hintsSize.width,
-            height: hintsSize.height
+        let isResults = if case .results = state { true } else { false }
+        sectionLabel.isHidden = !isResults
+        scrollView.isHidden = !isResults
+        hintsView.isHidden = !isResults
+        emptyLabel.isHidden = state != .empty
+
+        sectionLabel.frame = NSRect(x: 20, y: height - 21, width: 300, height: 15)
+        scrollView.frame = NSRect(
+            x: 0,
+            y: Self.cardHintsHeight,
+            width: width,
+            height: max(height - Self.cardHeaderHeight - Self.cardHintsHeight, 0)
         )
-
-        scrollView.frame = NSRect(x: 0, y: footerHeight, width: width, height: max(bodyTop - 1 - footerHeight, 0))
-        emptyLabel.frame = NSRect(x: 0, y: (bodyTop - 18) / 2, width: width, height: 18)
+        layOutHints()
+        emptyLabel.frame = NSRect(x: 0, y: (height - 18) / 2, width: width, height: 18)
 
         let listWidth = scrollView.contentSize.width
         if resultsList.frame.width != listWidth {
@@ -152,10 +206,127 @@ final class LauncherViewController: NSViewController, NSTextFieldDelegate {
         }
     }
 
-    /// The panel height for the current content: the search field alone, or full height.
-    private var preferredHeight: CGFloat {
-        if model.items.isEmpty && model.query.isEmpty { return Self.headerHeight }
-        return Self.headerHeight + 1 + ResultsListView.height(forRows: Self.maxVisibleRows) + Self.footerHeight
+    private func layOutHints() {
+        let size = hintsView.intrinsicContentSize
+        hintsView.frame = NSRect(
+            x: Self.width - 20 - size.width,
+            y: (Self.cardHintsHeight - size.height) / 2,
+            width: size.width,
+            height: size.height
+        )
+    }
+
+    /// Moves the card to `state`: fading it in or out, or animating its height.
+    private func setCardState(_ state: CardState) {
+        let old = cardState
+        guard state != old else { return }
+        cardState = state
+        let animated = isPresented
+        card.layer?.removeAllAnimations()
+
+        guard state != .hidden else {
+            guard animated else {
+                card.isHidden = true
+                return
+            }
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = 0.1
+                card.animator().alphaValue = 0
+            } completionHandler: { [weak self] in
+                // Animation completions run on the main thread.
+                MainActor.assumeIsolated {
+                    guard let self, self.cardState == .hidden else { return }
+                    self.card.isHidden = true
+                    self.card.alphaValue = 1
+                }
+            }
+            return
+        }
+
+        let target = Self.cardFrame(height: Self.height(for: state))
+        if old == .hidden || card.isHidden {
+            // Appear: slide down a little from under the capsule while fading in.
+            card.frame = target
+            layOutCardBody(for: state)
+            card.isHidden = false
+            guard animated else {
+                card.alphaValue = 1
+                return
+            }
+            card.alphaValue = 0
+            card.frame = target.offsetBy(dx: 0, dy: 6)
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = 0.15
+                context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+                card.animator().alphaValue = 1
+                card.animator().frame = target
+            }
+            return
+        }
+
+        card.alphaValue = 1
+        layOutCardBody(for: state)
+        guard animated else {
+            card.frame = target
+            return
+        }
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.18
+            context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            card.animator().frame = target
+        }
+    }
+
+    // MARK: - Showing and hiding
+
+    /// Fades and scales the content in. Call right after the panel is ordered front.
+    func animateIn() {
+        presentation += 1
+        isPresented = true
+        guard let layer = view.layer else { return }
+        layer.removeAllAnimations()
+        let fade = CABasicAnimation(keyPath: "opacity")
+        fade.fromValue = 0
+        fade.toValue = 1
+        let scale = CABasicAnimation(keyPath: "transform")
+        scale.fromValue = NSValue(caTransform3D: Self.scaleTransform(0.98))
+        scale.toValue = NSValue(caTransform3D: CATransform3DIdentity)
+        let group = CAAnimationGroup()
+        group.animations = [fade, scale]
+        group.duration = 0.15
+        group.timingFunction = CAMediaTimingFunction(name: .easeOut)
+        layer.add(group, forKey: "present")
+    }
+
+    /// Fades the content out, then calls `completion` unless the panel was shown again meanwhile.
+    func animateOut(completion: @escaping () -> Void) {
+        isPresented = false
+        let current = presentation
+        guard let layer = view.layer else { return completion() }
+        CATransaction.begin()
+        CATransaction.setCompletionBlock { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self, self.presentation == current else { return }
+                layer.removeAnimation(forKey: "dismiss")
+                completion()
+            }
+        }
+        let fade = CABasicAnimation(keyPath: "opacity")
+        fade.fromValue = 1
+        fade.toValue = 0
+        fade.duration = 0.1
+        fade.fillMode = .forwards
+        fade.isRemovedOnCompletion = false
+        layer.add(fade, forKey: "dismiss")
+        CATransaction.commit()
+    }
+
+    /// Scales by `factor` around the top center of the capsule.
+    private static func scaleTransform(_ factor: CGFloat) -> CATransform3D {
+        let anchor = CGPoint(x: windowSize.width / 2, y: capsuleFrame.maxY)
+        var transform = CATransform3DMakeTranslation(anchor.x, anchor.y, 0)
+        transform = CATransform3DScale(transform, factor, factor, 1)
+        return CATransform3DTranslate(transform, -anchor.x, -anchor.y, 0)
     }
 
     /// Exercises the typing path once (focus, insert text, search, fill rows) so its one-time
@@ -165,10 +336,10 @@ final class LauncherViewController: NSViewController, NSTextFieldDelegate {
         (searchField.currentEditor() as? NSTextView)?.insertText("a", replacementRange: NSRange(location: NSNotFound, length: 0))
     }
 
-    /// Clears the query and focuses the field. Call before the panel is ordered front.
     /// Readies the panel to be ordered front: either clears the search, or (`restoring`) keeps
     /// the last one with its text selected, so typing replaces it.
     func prepareForShow(restoring: Bool) {
+        isPresented = false
         if restoring && !model.query.isEmpty {
             model.restore()
             if searchField.currentEditor() == nil {
@@ -195,32 +366,25 @@ final class LauncherViewController: NSViewController, NSTextFieldDelegate {
         if !model.items.isEmpty {
             PerfLog.measure("reload") { resultsList.update(model.items, detail: model.detail(for:)) }
         }
-        // Most keys change only the rows. The chrome and layout are touched only when they
-        // change, since even an identical `stringValue` redraws its label.
-        let isEmpty = model.items.isEmpty
-        let chrome = Chrome(isEmpty: isEmpty, hasQuery: !model.query.isEmpty)
-        if chrome != lastChrome {
-            lastChrome = chrome
-            scrollView.isHidden = isEmpty
-            footerSeparator.isHidden = isEmpty
-            sectionLabel.isHidden = isEmpty
-            hintsView.isHidden = isEmpty
-            clearButton.isHidden = !chrome.hasQuery
-            headerSeparator.isHidden = isEmpty && !chrome.hasQuery
-            emptyLabel.isHidden = !isEmpty || !chrome.hasQuery
-            view.needsLayout = true
+        let hasQuery = !model.query.isEmpty
+        if clearButton.isHidden == hasQuery {
+            clearButton.isHidden = !hasQuery
         }
-        let height = preferredHeight
-        if height != view.frame.height {
-            onHeightChange(height)
-            view.needsLayout = true
+        let state: CardState = if !model.items.isEmpty {
+            .results(rows: model.items.count)
+        } else {
+            hasQuery ? .empty : .hidden
         }
-        selectionChanged()
+        setCardState(state)
+        selectionChanged(animated: false)
     }
 
-    /// Moves the highlight, and switches the footer between a calculation's hints and an app's.
-    private func selectionChanged() {
-        resultsList.select(model.items.indices.contains(model.selection) ? model.selection : nil)
+    /// Moves the highlight, and switches the heading and hints between a calculation's and an
+    /// app's. Only touches them when they change, since even an identical `stringValue`
+    /// redraws its label.
+    private func selectionChanged(animated: Bool) {
+        let index = model.items.indices.contains(model.selection) ? model.selection : nil
+        resultsList.select(index, animated: animated && isPresented)
         let isCalculation = if case .calculation = model.selectedItem { true } else { false }
         let label = isCalculation ? "Calculator" : model.query.isEmpty ? "Recent" : "Applications"
         let footer = Footer(label: label, isCalculation: isCalculation)
@@ -228,7 +392,7 @@ final class LauncherViewController: NSViewController, NSTextFieldDelegate {
         lastFooter = footer
         sectionLabel.stringValue = label
         hintsView.hints = isCalculation ? Self.calculationHints : Self.appHints
-        view.needsLayout = true
+        layOutHints()
     }
 
     @objc private func clearQuery() {
