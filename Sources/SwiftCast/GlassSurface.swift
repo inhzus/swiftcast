@@ -5,8 +5,7 @@ import AppKit
 enum GlassSurface {
     /// A surface with `cornerRadius`, and the view its content goes in. The content view
     /// always fills the surface.
-    static func make(cornerRadius: CGFloat) -> (surface: NSView, content: NSView) {
-        let content = NSView()
+    static func make(cornerRadius: CGFloat, content: NSView = NSView()) -> (surface: NSView, content: NSView) {
         let glass = NSGlassEffectView()
         glass.cornerRadius = cornerRadius
         glass.contentView = content

@@ -28,6 +28,11 @@ final class AppSettings {
         }
     }
 
+    /// Where the launcher opens, as moved by dragging its search capsule.
+    var launcherPlacement: LauncherPlacement {
+        didSet { save(launcherPlacement, forKey: "launcherPlacement") }
+    }
+
     @ObservationIgnored var onPluginsChange: () -> Void = {}
 
     init(defaults: UserDefaults = .standard) {
@@ -36,6 +41,8 @@ final class AppSettings {
             .flatMap { try? JSONDecoder().decode(Shortcut.self, from: $0) } ?? .default
         restoreInterval = defaults.object(forKey: "restoreInterval") as? TimeInterval ?? 60
         disabledPlugins = Set(defaults.stringArray(forKey: "disabledPlugins") ?? [])
+        launcherPlacement = defaults.data(forKey: "launcherPlacement")
+            .flatMap { try? JSONDecoder().decode(LauncherPlacement.self, from: $0) } ?? .default
         // Plugin data used to live in UserDefaults; it isn't migrated.
         for key in ["searchFolders", "launchHistory", "queryHistory"] {
             defaults.removeObject(forKey: key)
