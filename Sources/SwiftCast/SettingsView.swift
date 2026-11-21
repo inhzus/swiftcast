@@ -41,6 +41,7 @@ struct SettingsView: View {
     let plugins: [any LauncherPlugin]
     let actions: SettingsActions
     @Bindable private var state = SettingsViewState()
+    @Bindable private var pluginState = PluginSettingsState()
 
     var body: some View {
         NavigationSplitView {
@@ -149,7 +150,7 @@ struct SettingsView: View {
                     Text(plugin.summary)
                 }
             }
-            plugin.settingsView()
+            PluginSettingsSections(plugin: plugin, state: pluginState)
         }
         .formStyle(.grouped)
         .navigationTitle(plugin.name)

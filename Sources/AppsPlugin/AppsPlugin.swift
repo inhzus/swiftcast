@@ -1,6 +1,5 @@
 import Foundation
 import SwiftCastPluginKit
-import SwiftUI
 
 /// App search: finds installed apps by fuzzy name, ranked by how often and how recently
 /// they were opened. ↩ opens the app, ⌘↩ shows it in Finder.
@@ -46,7 +45,6 @@ public final class AppsPlugin: LauncherPlugin {
             self?.lastIndexed = nil
             Task { await self?.reindex() }
         }
-        settings.onClearLaunchHistory = { [weak self] in self?.clearLaunchHistory() }
     }
 
     public func activate(_ context: PluginContext) async {
@@ -80,8 +78,39 @@ public final class AppsPlugin: LauncherPlugin {
         engine.apps.map(\.url.path)
     }
 
-    public func settingsView() -> AnyView? {
-        AnyView(AppsSettingsView(settings: settings))
+    // MARK: - Settings
+
+    public func settingsSections() -> [SettingsSection] {
+        [
+            SettingsSection("Search Folders", footer: "Apps are found up to three folders deep.", rows: [
+                SettingsRow(id: "searchFolders", title: "Search folders", control: .folders(
+                    fixed: AppIndexer.defaultRoots,
+                    editable: settings.extraFolders,
+                    addPrompt: "Choose folders to search for apps")),
+            ]),
+            SettingsSection("Usage", rows: [
+                SettingsRow(
+                    id: "clearLaunchHistory",
+                    title: "Launch history",
+                    detail: "Ranks the apps you open most and lists recent ones.",
+                    control: .button("Clear…", enabled: !engine.usage.isEmpty, confirmation: SettingsConfirmation(
+                        title: "Clear launch history?",
+                        message: "Recent apps and the ranking boost for frequently used apps start over.",
+                        action: "Clear",
+                        destructive: true))),
+            ]),
+        ]
+    }
+
+    public func setSetting(_ id: String, to value: SettingsValue) {
+        guard id == "searchFolders", case .folders(let folders) = value else { return }
+        // Skip the default roots and repeats, however the paths are spelled.
+        var known = Set(AppIndexer.defaultRoots.map(\.standardizedFileURL))
+        settings.extraFolders = folders.filter { known.insert($0.standardizedFileURL).inserted }
+    }
+
+    public func performSettingsAction(_ id: String) {
+        if id == "clearLaunchHistory" { clearLaunchHistory() }
     }
 
     static func item(for result: SearchResult, detail: String?) -> ResultItem {

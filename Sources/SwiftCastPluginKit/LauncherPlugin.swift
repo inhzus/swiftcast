@@ -1,5 +1,4 @@
 import Foundation
-import SwiftUI
 
 /// A feature of the launcher, such as app search or quick math.
 ///
@@ -41,9 +40,13 @@ public protocol LauncherPlugin: AnyObject {
     func didPerform(_ action: ResultAction, on item: ResultItem)
     /// File paths of icons the plugin's rows show, rendered ahead of time.
     func iconPaths() -> [String]
-    /// The plugin's `Section`s for its page in Settings, shown below the switch that turns it
-    /// on and off; `nil` when it has no settings.
-    func settingsView() -> AnyView?
+    /// The plugin's page in Settings, below the switch that turns it on and off, which the
+    /// app draws (see `SettingsSection`). Empty when it has no settings.
+    func settingsSections() -> [SettingsSection]
+    /// The user changed the row `id` to `value`. The app then asks for the sections again.
+    func setSetting(_ id: String, to value: SettingsValue)
+    /// The user pressed the button row `id`. The app then asks for the sections again.
+    func performSettingsAction(_ id: String)
 }
 
 public extension LauncherPlugin {
@@ -52,7 +55,9 @@ public extension LauncherPlugin {
     func panelDidShow() {}
     func didPerform(_ action: ResultAction, on item: ResultItem) {}
     func iconPaths() -> [String] { [] }
-    func settingsView() -> AnyView? { nil }
+    func settingsSections() -> [SettingsSection] { [] }
+    func setSetting(_ id: String, to value: SettingsValue) {}
+    func performSettingsAction(_ id: String) {}
 }
 
 /// What the app offers a plugin.
