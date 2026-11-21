@@ -1,5 +1,5 @@
 import AppKit
-import SwiftCastCore
+import SwiftCastPluginKit
 
 /// The launcher's content, Spotlight-style: a glass search capsule, and below it a glass card
 /// with the results, a section heading and key hints.
@@ -40,25 +40,25 @@ final class LauncherViewController: NSViewController, NSTextFieldDelegate {
     /// What the heading and hints currently show; see `selectionChanged(animated:)`.
     private struct Footer: Equatable {
         var label: String
-        var isCalculation: Bool
+        var actions: [String]
     }
     private var lastFooter: Footer?
-    private static let appHints = [("↩", "Open"), ("⌘↩", "Show in Finder"), ("esc", "Close")]
-    private static let calculationHints = [("↩", "Copy"), ("esc", "Close")]
+    /// Keys for a row's actions, in order.
+    private static let actionKeys = ["↩", "⌘↩"]
 
     /// Whether the panel is on screen, so changes animate. Off while it's prepared for showing.
     private var isPresented = false
     /// Bumped on every show, so a fade-out that finishes after a reopen doesn't hide the panel.
     private var presentation = 0
 
-    private let resultsList = ResultsListView(capacity: LauncherViewModel.itemLimit)
+    private let resultsList: ResultsListView
     private var card = NSView()
     private var cardContent = NSView()
     private let cardBody = NSView()
     private let scrollView = NSScrollView()
-    private let emptyLabel = NSTextField(labelWithString: "No matching applications")
+    private let emptyLabel = NSTextField(labelWithString: "No results")
     private let sectionLabel = NSTextField(labelWithString: "")
-    private let hintsView = KeyHintsView(hints: LauncherViewController.appHints)
+    private let hintsView = KeyHintsView(hints: [])
     private let clearButton = NSButton(
         image: NSImage(systemSymbolName: "xmark.circle.fill", accessibilityDescription: "Clear search")!,
         target: nil,
@@ -67,6 +67,7 @@ final class LauncherViewController: NSViewController, NSTextFieldDelegate {
 
     init(model: LauncherViewModel) {
         self.model = model
+        resultsList = ResultsListView(capacity: model.itemLimit)
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -153,7 +154,7 @@ final class LauncherViewController: NSViewController, NSTextFieldDelegate {
         resultsList.onClick = { [unowned self] index in
             guard model.items.indices.contains(index) else { return }
             model.selection = index
-            model.launchSelected()
+            model.performPrimary()
         }
         resultsList.onHover = { [unowned self] index in
             if model.items.indices.contains(index) { model.selection = index }
@@ -364,7 +365,7 @@ final class LauncherViewController: NSViewController, NSTextFieldDelegate {
         // Empty results only hide the list, leaving its rows as they are, so the next query
         // changes as few rows as possible.
         if !model.items.isEmpty {
-            PerfLog.measure("reload") { resultsList.update(model.items, detail: model.detail(for:)) }
+            PerfLog.measure("reload") { resultsList.update(model.items.map(\.result)) }
         }
         let hasQuery = !model.query.isEmpty
         if clearButton.isHidden == hasQuery {
@@ -379,19 +380,21 @@ final class LauncherViewController: NSViewController, NSTextFieldDelegate {
         selectionChanged(animated: false)
     }
 
-    /// Moves the highlight, and switches the heading and hints between a calculation's and an
-    /// app's. Only touches them when they change, since even an identical `stringValue`
+    /// Moves the highlight, and sets the heading and hints for the selected row's plugin and
+    /// actions. Only touches them when they change, since even an identical `stringValue`
     /// redraws its label.
     private func selectionChanged(animated: Bool) {
         let index = model.items.indices.contains(model.selection) ? model.selection : nil
         resultsList.select(index, animated: animated && isPresented)
-        let isCalculation = if case .calculation = model.selectedItem { true } else { false }
-        let label = isCalculation ? "Calculator" : model.query.isEmpty ? "Recent" : "Applications"
-        let footer = Footer(label: label, isCalculation: isCalculation)
+        guard let item = model.selectedItem else { return }
+        let plugin = model.plugin(for: item)
+        let label = (model.query.isEmpty ? plugin?.emptyQueryTitle : nil) ?? plugin?.sectionTitle ?? ""
+        let actions = item.result.actions.prefix(Self.actionKeys.count).map(\.title)
+        let footer = Footer(label: label, actions: actions)
         guard footer != lastFooter else { return }
         lastFooter = footer
         sectionLabel.stringValue = label
-        hintsView.hints = isCalculation ? Self.calculationHints : Self.appHints
+        hintsView.hints = zip(Self.actionKeys, actions).map { ($0, $1) } + [("esc", "Close")]
         layOutHints()
     }
 
@@ -414,11 +417,11 @@ final class LauncherViewController: NSViewController, NSTextFieldDelegate {
         case #selector(NSResponder.moveUp(_:)):
             showHistoryText(model.moveUp())
         case #selector(NSResponder.insertNewline(_:)):
-            model.launchSelected()
+            model.performPrimary()
         case #selector(NSResponder.cancelOperation(_:)):
             model.onDismiss()
         case NSSelectorFromString("noop:") where Self.isCommandReturn(NSApp.currentEvent):
-            model.revealSelected()
+            model.performSecondary()
         default:
             return false
         }

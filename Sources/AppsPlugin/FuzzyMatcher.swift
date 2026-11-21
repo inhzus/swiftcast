@@ -4,7 +4,7 @@ import Foundation
 ///
 /// Matches fall into tiers (exact > prefix > initials > word prefix > substring > subsequence).
 /// Within a tier, shorter candidates score slightly higher.
-public enum FuzzyMatcher {
+enum FuzzyMatcher {
     enum Tier: Int {
         case subsequence = 100
         case substring = 600
@@ -16,13 +16,13 @@ public enum FuzzyMatcher {
 
     /// A candidate name prepared once (folded characters, word starts) so it can be scored
     /// against many queries cheaply.
-    public struct Candidate: Sendable {
+    struct Candidate: Sendable {
         let chars: [Character]
         let wordStarts: [Int]
         let wordStartSet: Set<Int>
         let initials: [Character]
 
-        public init(_ name: String) {
+        init(_ name: String) {
             let original = Array(name)
             let chars = original.map { FuzzyMatcher.fold($0) }
             let starts = FuzzyMatcher.wordStarts(original)
@@ -34,35 +34,35 @@ public enum FuzzyMatcher {
     }
 
     /// A query normalized once; `nil` when the query is blank.
-    public struct Query: Sendable {
+    struct Query: Sendable {
         let chars: [Character]
 
-        public init?(_ query: String) {
+        init?(_ query: String) {
             chars = Array(FuzzyMatcher.normalize(query.trimmingCharacters(in: .whitespaces)))
             if chars.isEmpty { return nil }
         }
     }
 
     /// A successful match: its score and the matched character positions in the candidate.
-    public struct Match: Equatable, Sendable {
-        public let score: Int
-        public let indices: [Int]
+    struct Match: Equatable, Sendable {
+        let score: Int
+        let indices: [Int]
     }
 
-    public static func score(query: String, candidate: String) -> Int? {
+    static func score(query: String, candidate: String) -> Int? {
         match(query: query, candidate: candidate)?.score
     }
 
-    public static func match(query: String, candidate: String) -> Match? {
+    static func match(query: String, candidate: String) -> Match? {
         guard let q = Query(query) else { return nil }
         return match(q, Candidate(candidate))
     }
 
-    public static func score(_ query: Query, _ candidate: Candidate) -> Int? {
+    static func score(_ query: Query, _ candidate: Candidate) -> Int? {
         match(query, candidate)?.score
     }
 
-    public static func match(_ query: Query, _ candidate: Candidate) -> Match? {
+    static func match(_ query: Query, _ candidate: Candidate) -> Match? {
         let q = query.chars
         let c = candidate.chars
         guard q.count <= c.count else { return nil }

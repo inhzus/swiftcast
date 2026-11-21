@@ -1,10 +1,10 @@
 import AppKit
-import SwiftCastCore
+import SwiftCastPluginKit
 
 /// The results list: a fixed pool of row views, created once.
 ///
-/// Results are capped (`SearchEngine.results(limit:)`), so the list never needs more rows
-/// than the pool holds. Updating it sets the content of rows whose app changed and hides
+/// Plugins cap their results (`LauncherPlugin.resultLimit`), so the list never needs more
+/// rows than the pool holds. Updating it sets the content of rows whose item changed and hides
 /// the rest, so no views are created or torn down while the user types. One highlight view
 /// behind the rows marks the selection, and slides when the selection moves.
 final class ResultsListView: NSView {
@@ -51,17 +51,10 @@ final class ResultsListView: NSView {
     override var isFlipped: Bool { true }
 
     /// Shows `items` (at most `capacity`), touching only rows whose content changed.
-    /// `detail` gives the grey text that tells apart apps sharing a name.
-    func update(_ items: [LauncherItem], detail: (AppEntry) -> String?) {
+    func update(_ items: [ResultItem]) {
         let newCount = min(items.count, rows.count)
         for index in 0..<newCount {
-            let item = items[index]
-            switch item {
-            case .app(let result): rows[index].configure(with: item, detail: detail(result.app))
-            case .calculation(let calculation):
-                let detail = ["= " + calculation.expression, calculation.note].compactMap { $0 }.joined(separator: " · ")
-                rows[index].configure(with: item, detail: detail)
-            }
+            rows[index].configure(with: items[index])
             rows[index].isHidden = false
         }
         for index in newCount..<max(count, newCount) {
@@ -145,21 +138,19 @@ final class ResultsListView: NSView {
     }
 }
 
-/// Icon and app name, with the letters that matched the query in bold, plus grey detail
-/// text for apps that share a name. A calculation shows its result, with the expression as
-/// the detail. Laid out with frames, which is cheaper than constraints for a view this simple.
+/// Icon and title, with the highlighted characters (such as the letters that matched the
+/// query) in bold, plus grey detail text. Laid out with frames, which is cheaper than
+/// constraints for a view this simple.
 private final class ResultRowView: NSView {
     private static let nameFont = NSFont.systemFont(ofSize: 14)
     private static let matchFont = NSFont.systemFont(ofSize: 14, weight: .bold)
-    private static let calculatorPath = "/System/Applications/Calculator.app"
 
     var onClick: () -> Void = {}
 
     private let icon = NSImageView()
     private let nameLabel = NSTextField(labelWithString: "")
     private let detailLabel = NSTextField(labelWithString: "")
-    private var item: LauncherItem?
-    private var detail: String?
+    private var item: ResultItem?
 
     init() {
         super.init(frame: .zero)
@@ -174,29 +165,25 @@ private final class ResultRowView: NSView {
         fatalError("init(coder:) is not used")
     }
 
-    func configure(with item: LauncherItem, detail: String?) {
-        guard item != self.item || detail != self.detail else { return }
-        let iconPath = Self.iconPath(for: item)
-        if self.item.map(Self.iconPath) != iconPath {
-            icon.image = IconCache.shared.icon(for: iconPath)
+    func configure(with item: ResultItem) {
+        guard item != self.item else { return }
+        if self.item?.icon != item.icon {
+            icon.image = Self.image(for: item.icon)
         }
         self.item = item
-        self.detail = detail
-        switch item {
-        case .app(let result):
-            nameLabel.attributedStringValue = Self.name(result.app.name, bolding: result.matchedIndices)
-        case .calculation(let calculation):
-            nameLabel.attributedStringValue = Self.name(calculation.display, bolding: Array(0..<calculation.display.count))
-        }
-        detailLabel.stringValue = detail ?? ""
-        detailLabel.isHidden = detail == nil
+        nameLabel.attributedStringValue = Self.name(item.title, bolding: item.highlightedIndices)
+        detailLabel.stringValue = item.detail ?? ""
+        detailLabel.isHidden = item.detail == nil
         needsLayout = true
     }
 
-    private static func iconPath(for item: LauncherItem) -> String {
-        switch item {
-        case .app(let result): result.app.url.path
-        case .calculation: calculatorPath
+    private static func image(for icon: ResultIcon) -> NSImage? {
+        switch icon {
+        case .file(let path):
+            IconCache.shared.icon(for: path)
+        case .symbol(let name):
+            NSImage(systemSymbolName: name, accessibilityDescription: nil)?
+                .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 22, weight: .regular))
         }
     }
 

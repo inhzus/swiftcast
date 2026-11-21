@@ -1,5 +1,5 @@
 import Testing
-@testable import SwiftCastCore
+@testable import CalculatorPlugin
 
 /// One table per category: adding a unit adds a row here.
 struct UnitTests {

@@ -1,5 +1,5 @@
 import Testing
-@testable import SwiftCastCore
+@testable import CalculatorPlugin
 
 struct CalculatorTests {
     private func display(_ input: String) -> String? {

@@ -1,14 +1,14 @@
 import Foundation
 
 /// An app in the results, with the positions in its name that matched the query.
-public struct SearchResult: Hashable, Identifiable, Sendable {
-    public let app: AppEntry
+struct SearchResult: Hashable, Identifiable, Sendable {
+    let app: AppEntry
     /// Character offsets into `app.name`; empty when an alternate name matched.
-    public let matchedIndices: [Int]
+    let matchedIndices: [Int]
 
-    public var id: String { app.id }
+    var id: String { app.id }
 
-    public init(app: AppEntry, matchedIndices: [Int] = []) {
+    init(app: AppEntry, matchedIndices: [Int] = []) {
         self.app = app
         self.matchedIndices = matchedIndices
     }
@@ -16,22 +16,22 @@ public struct SearchResult: Hashable, Identifiable, Sendable {
 
 /// Ranks indexed apps against a query, combining match quality with frecency.
 @MainActor
-public final class SearchEngine {
+final class SearchEngine {
     /// Points an alternate-name match loses against the same kind of match on the app's name.
     static let alternateNamePenalty = 50
 
-    public private(set) var apps: [AppEntry] = []
-    public let usage: UsageStore
+    private(set) var apps: [AppEntry] = []
+    let usage: UsageStore
     /// Prepared match candidates, parallel to `apps`: the name first, then alternate names.
     private var candidates: [[FuzzyMatcher.Candidate]] = []
     /// Text that tells apart apps sharing a name, keyed by app ID.
     private var details: [String: String] = [:]
 
-    public init(usage: UsageStore) {
+    init(usage: UsageStore) {
         self.usage = usage
     }
 
-    public func update(apps: [AppEntry]) {
+    func update(apps: [AppEntry]) {
         self.apps = apps
         candidates = apps.map { app in
             ([app.name] + app.alternateNames).map { FuzzyMatcher.Candidate($0) }
@@ -39,7 +39,7 @@ public final class SearchEngine {
         details = Self.details(for: apps)
     }
 
-    public func results(for query: String, limit: Int = 20, now: Date = Date()) -> [SearchResult] {
+    func results(for query: String, limit: Int = 20, now: Date = Date()) -> [SearchResult] {
         var scored: [(result: SearchResult, score: Double)] = []
         if let q = FuzzyMatcher.Query(query) {
             for (app, names) in zip(apps, candidates) {
@@ -62,7 +62,7 @@ public final class SearchEngine {
 
     /// Distinguishing text for an app whose name another indexed app shares: its folder, or
     /// its bundle's file name when the folder is shared too. `nil` for unique names.
-    public func detail(for app: AppEntry) -> String? {
+    func detail(for app: AppEntry) -> String? {
         details[app.id]
     }
 

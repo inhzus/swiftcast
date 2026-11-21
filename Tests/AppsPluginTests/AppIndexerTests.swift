@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import SwiftCastCore
+@testable import AppsPlugin
 
 struct AppIndexerTests {
     private func makeTree(_ paths: [String]) throws -> URL {
