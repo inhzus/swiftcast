@@ -2,9 +2,9 @@ import Foundation
 import SwiftCastPluginKit
 
 /// App search: finds installed apps by fuzzy name, ranked by how often and how recently
-/// they were opened. ↩ opens the app, ⌘↩ shows it in Finder.
+/// they were opened (usage the app keeps). ↩ opens the app, ⌘↩ shows it in Finder.
 ///
-/// Keeps launch history and extra search folders in its own database, `apps.db`.
+/// Keeps extra search folders in its own database, `apps.db`.
 @MainActor
 public final class AppsPlugin: LauncherPlugin {
     public let id = "apps"
@@ -34,12 +34,15 @@ public final class AppsPlugin: LauncherPlugin {
         """,
     ]
 
+    let database: Database
+
     public convenience init() {
         self.init(database: .open("apps", migrations: Self.migrations))
     }
 
     init(database: Database) {
-        engine = SearchEngine(usage: UsageStore(database: database))
+        self.database = database
+        engine = SearchEngine()
         settings = AppsSettings(database: database)
         settings.onFoldersChange = { [weak self] in
             self?.lastIndexed = nil
@@ -49,7 +52,22 @@ public final class AppsPlugin: LauncherPlugin {
 
     public func activate(_ context: PluginContext) async {
         self.context = context
+        engine.usageBoost = context.usageBoost
+        engine.frecency = context.frecency
+        handOverLaunches(to: context)
         await reindex()
+    }
+
+    /// Gives the app the launches this plugin counted before the app kept usage, once.
+    func handOverLaunches(to context: PluginContext) {
+        var launches: [UsageRecord] = []
+        for row in database.rows("SELECT app_id, count, last_used FROM launches") {
+            guard let id = row[0].text, let count = row[1].int, let lastUsed = row[2].double else { continue }
+            launches.append(UsageRecord(id: id, count: Int(count), lastUsed: Date(timeIntervalSince1970: lastUsed)))
+        }
+        guard !launches.isEmpty else { return }
+        context.importUsage(launches)
+        database.execute("DELETE FROM launches")
     }
 
     public func results(for query: String) -> [ResultItem] {
@@ -60,18 +78,6 @@ public final class AppsPlugin: LauncherPlugin {
 
     public func panelDidShow() {
         Task { await reindex() }
-    }
-
-    public func didPerform(_ action: ResultAction, on item: ResultItem) {
-        if case .openApplication = action.effect {
-            engine.usage.increment(item.id)
-        }
-    }
-
-    /// Forgets which apps were opened, so recent apps and the ranking boost start over.
-    func clearLaunchHistory() {
-        engine.usage.clear()
-        context?.resultsDidChange()
     }
 
     public func iconPaths() -> [String] {
@@ -88,17 +94,6 @@ public final class AppsPlugin: LauncherPlugin {
                     editable: settings.extraFolders,
                     addPrompt: "Choose folders to search for apps")),
             ]),
-            SettingsSection("Usage", rows: [
-                SettingsRow(
-                    id: "clearLaunchHistory",
-                    title: "Launch history",
-                    detail: "Ranks the apps you open most and lists recent ones.",
-                    control: .button("Clear…", enabled: !engine.usage.isEmpty, confirmation: SettingsConfirmation(
-                        title: "Clear launch history?",
-                        message: "Recent apps and the ranking boost for frequently used apps start over.",
-                        action: "Clear",
-                        destructive: true))),
-            ]),
         ]
     }
 
@@ -107,10 +102,6 @@ public final class AppsPlugin: LauncherPlugin {
         // Skip the default roots and repeats, however the paths are spelled.
         var known = Set(AppIndexer.defaultRoots.map(\.standardizedFileURL))
         settings.extraFolders = folders.filter { known.insert($0.standardizedFileURL).inserted }
-    }
-
-    public func performSettingsAction(_ id: String) {
-        if id == "clearLaunchHistory" { clearLaunchHistory() }
     }
 
     static func item(for result: SearchResult, detail: String?) -> ResultItem {
@@ -124,7 +115,8 @@ public final class AppsPlugin: LauncherPlugin {
             actions: [
                 ResultAction("Open", .openApplication(app.url)),
                 ResultAction("Show in Finder", .revealInFinder(app.url)),
-            ]
+            ],
+            match: result.match
         )
     }
 

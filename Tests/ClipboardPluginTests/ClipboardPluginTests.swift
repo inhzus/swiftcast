@@ -100,6 +100,9 @@ struct ClipboardPluginTests {
             #expect(plugin.results(for: query).map(\.actions) == [[ResultAction("Open", .openView)]], "\(query)")
         }
         #expect(plugin.results(for: "hist").first?.highlightedIndices == [10, 11, 12, 13])
+        #expect(plugin.results(for: "cli").first?.match == .prefix)
+        #expect(plugin.results(for: "clipboard history").first?.match == .exact)
+        #expect(plugin.results(for: "hist").first?.match == .wordPrefix)
         for query in ["", "xyz", "board"] {
             #expect(plugin.results(for: query).isEmpty, "\(query)")
         }

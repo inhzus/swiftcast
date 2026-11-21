@@ -1,4 +1,5 @@
 import Foundation
+import SwiftCastPluginKit
 
 /// Scores how well a query matches a candidate name. Higher is better; `nil` means no match.
 ///
@@ -12,6 +13,18 @@ enum FuzzyMatcher {
         case initials = 800
         case prefix = 900
         case exact = 1000
+
+        /// The same kind of match, in the terms the app ranks every plugin's rows by.
+        var quality: MatchQuality {
+            switch self {
+            case .subsequence: .fuzzy
+            case .substring: .substring
+            case .wordPrefix: .wordPrefix
+            case .initials: .initials
+            case .prefix: .prefix
+            case .exact: .exact
+            }
+        }
     }
 
     /// A candidate name prepared once (folded characters, word starts) so it can be scored
@@ -43,9 +56,11 @@ enum FuzzyMatcher {
         }
     }
 
-    /// A successful match: its score and the matched character positions in the candidate.
+    /// A successful match: its score, its kind and the matched character positions in the
+    /// candidate.
     struct Match: Equatable, Sendable {
         let score: Int
+        let tier: Tier
         let indices: [Int]
     }
 
@@ -70,20 +85,21 @@ enum FuzzyMatcher {
         let lengthPenalty = min(c.count, 99)
 
         if q == c {
-            return Match(score: Tier.exact.rawValue, indices: Array(c.indices))
+            return Match(score: Tier.exact.rawValue, tier: .exact, indices: Array(c.indices))
         }
         if c.starts(with: q) {
-            return Match(score: Tier.prefix.rawValue - lengthPenalty, indices: Array(q.indices))
+            return Match(score: Tier.prefix.rawValue - lengthPenalty, tier: .prefix, indices: Array(q.indices))
         }
         if q.count > 1, candidate.initials.starts(with: q) {
-            return Match(score: Tier.initials.rawValue - lengthPenalty, indices: Array(candidate.wordStarts.prefix(q.count)))
+            return Match(score: Tier.initials.rawValue - lengthPenalty, tier: .initials, indices: Array(candidate.wordStarts.prefix(q.count)))
         }
         if let start = candidate.wordStarts.first(where: { c[$0...].starts(with: q) }) {
-            return Match(score: Tier.wordPrefix.rawValue - lengthPenalty, indices: Array(start..<(start + q.count)))
+            return Match(score: Tier.wordPrefix.rawValue - lengthPenalty, tier: .wordPrefix, indices: Array(start..<(start + q.count)))
         }
         if let offset = firstIndex(of: q, in: c) {
             return Match(
                 score: Tier.substring.rawValue - min(offset * 5, 50) - lengthPenalty / 2,
+                tier: .substring,
                 indices: Array(offset..<(offset + q.count))
             )
         }
@@ -153,6 +169,6 @@ enum FuzzyMatcher {
         }
         guard qi == q.count else { return nil }
         let score = Tier.subsequence.rawValue + 200 + bonus - min(first, 20) - min(c.count, 99) / 2
-        return Match(score: max(1, min(score, Tier.substring.rawValue - 51)), indices: indices)
+        return Match(score: max(1, min(score, Tier.substring.rawValue - 51)), tier: .subsequence, indices: indices)
     }
 }

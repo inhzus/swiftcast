@@ -63,10 +63,13 @@ public final class ClipboardPlugin: LauncherPlugin {
         guard !query.isEmpty else { return [] }
         let title = "Clipboard History"
         let matched: Range<Int>
+        let match: MatchQuality
         if title.lowercased().hasPrefix(query) {
             matched = 0..<query.count
+            match = query.count == title.count ? .exact : .prefix
         } else if "history".hasPrefix(query) {
             matched = 10..<(10 + query.count)
+            match = .wordPrefix
         } else {
             return []
         }
@@ -76,7 +79,8 @@ public final class ClipboardPlugin: LauncherPlugin {
             highlightedIndices: Array(matched),
             detail: itemCount,
             icon: icon,
-            actions: [ResultAction("Open", .openView)]
+            actions: [ResultAction("Open", .openView)],
+            match: match
         )]
     }
 

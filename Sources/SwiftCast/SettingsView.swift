@@ -12,6 +12,7 @@ struct SettingsActions {
     /// Suspends the global hotkey while the recorder listens, and restores it afterwards.
     var setRecording: (Bool) -> Void
     var clearSearchHistory: () -> Void
+    var clearUsage: () -> Void
 }
 
 /// A page in the Settings sidebar.
@@ -31,6 +32,8 @@ private final class SettingsViewState {
     var loginError: String?
     var confirmingClear = false
     var historyCleared = false
+    var confirmingClearUsage = false
+    var usageCleared = false
 }
 
 /// Settings, System Settings–style: General, then a page per plugin where it can be turned
@@ -135,6 +138,21 @@ struct SettingsView {
                 } label: {
                     Text("Search history")
                     Text("Searches you acted on, which ↑ and ↓ step through in an empty field.")
+                }
+                LabeledContent {
+                    Button(state.usageCleared ? "Cleared" : "Clear…") { state.confirmingClearUsage = true }
+                        .disabled(state.usageCleared)
+                } label: {
+                    Text("Usage")
+                    Text("Ranks the results you pick most, and lists recent apps.")
+                }
+                .alert("Clear usage?", isPresented: $state.confirmingClearUsage) {
+                    Button("Clear", role: .destructive) {
+                        actions.clearUsage()
+                        state.usageCleared = true
+                    }
+                } message: {
+                    Text("Results go back to being ranked only by how well they match, and recent apps start over.")
                 }
             }
 
