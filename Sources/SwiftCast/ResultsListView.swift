@@ -58,7 +58,9 @@ final class ResultsListView: NSView {
             let item = items[index]
             switch item {
             case .app(let result): rows[index].configure(with: item, detail: detail(result.app))
-            case .calculation(let calculation): rows[index].configure(with: item, detail: "= " + calculation.expression)
+            case .calculation(let calculation):
+                let detail = ["= " + calculation.expression, calculation.note].compactMap { $0 }.joined(separator: " · ")
+                rows[index].configure(with: item, detail: detail)
             }
             rows[index].isHidden = false
         }
