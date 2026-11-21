@@ -10,13 +10,15 @@ let package = Package(
         .target(name: "SwiftCastPluginKit"),
         .target(name: "AppsPlugin", dependencies: ["SwiftCastPluginKit"]),
         .target(name: "CalculatorPlugin", dependencies: ["SwiftCastPluginKit"]),
+        .target(name: "ClipboardPlugin", dependencies: ["SwiftCastPluginKit"]),
         .target(name: "SwiftCastCore", dependencies: ["SwiftCastPluginKit"]),
         .executableTarget(name: "SwiftCast", dependencies: [
-            "SwiftCastCore", "SwiftCastPluginKit", "AppsPlugin", "CalculatorPlugin",
+            "SwiftCastCore", "SwiftCastPluginKit", "AppsPlugin", "CalculatorPlugin", "ClipboardPlugin",
         ]),
         .testTarget(name: "SwiftCastCoreTests", dependencies: ["SwiftCastCore", "SwiftCastPluginKit"]),
         .testTarget(name: "SwiftCastPluginKitTests", dependencies: ["SwiftCastPluginKit"]),
         .testTarget(name: "AppsPluginTests", dependencies: ["AppsPlugin", "SwiftCastPluginKit"]),
         .testTarget(name: "CalculatorPluginTests", dependencies: ["CalculatorPlugin", "SwiftCastPluginKit"]),
+        .testTarget(name: "ClipboardPluginTests", dependencies: ["ClipboardPlugin", "SwiftCastPluginKit"]),
     ]
 )

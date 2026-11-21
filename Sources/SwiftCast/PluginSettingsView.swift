@@ -99,6 +99,18 @@ struct PluginSettingsSections: View {
             } message: {
                 Text(confirmation?.message ?? "")
             }
+        case .number(let number, let range):
+            let clamp = { min(max($0, range.lowerBound), range.upperBound) }
+            LabeledContent {
+                HStack(spacing: 4) {
+                    NumberField(value: number) { set(row.id, .int(clamp($0))) }
+                        .frame(width: 64)
+                    Stepper("", value: Binding(get: { number }, set: { set(row.id, .int(clamp($0))) }), in: range)
+                        .labelsHidden()
+                }
+            } label: {
+                label(row)
+            }
         case .value(let value):
             LabeledContent {
                 Text(value)
@@ -145,5 +157,75 @@ struct PluginSettingsSections: View {
 
     private static func displayPath(_ url: URL) -> String {
         (url.path as NSString).abbreviatingWithTildeInPath
+    }
+}
+
+/// A number field that reports a new value only when editing ends (↩, Tab, clicking
+/// elsewhere, or leaving the page), not on every key: lowering a limit can delete data, so
+/// "100" mustn't pass through 1. Text that isn't a number puts the current value back.
+private struct NumberField: NSViewRepresentable {
+    let value: Int
+    let onCommit: (Int) -> Void
+
+    func makeNSView(context: Context) -> NSTextField {
+        let field = CommitOnRemovalField(string: String(value))
+        field.alignment = .right
+        field.delegate = context.coordinator
+        // SwiftUI can release the coordinator before removing the field, so hold it strongly;
+        // it doesn't hold the field.
+        let coordinator = context.coordinator
+        field.onRemoval = { coordinator.commit($0) }
+        return field
+    }
+
+    func updateNSView(_ field: NSTextField, context: Context) {
+        context.coordinator.parent = self
+        if field.currentEditor() == nil && field.stringValue != String(value) {
+            field.stringValue = String(value)
+        }
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(parent: self)
+    }
+
+    @MainActor
+    final class Coordinator: NSObject, NSTextFieldDelegate {
+        var parent: NumberField
+
+        init(parent: NumberField) {
+            self.parent = parent
+        }
+
+        func controlTextDidEndEditing(_ notification: Notification) {
+            guard let field = notification.object as? NSTextField else { return }
+            commit(field)
+        }
+
+        func commit(_ field: NSTextField) {
+            guard let value = Int(field.stringValue.trimmingCharacters(in: .whitespaces)) else {
+                field.stringValue = String(parent.value)
+                return
+            }
+            guard value != parent.value else { return }
+            // Removal happens while SwiftUI is updating views, when the page can't change
+            // state yet.
+            let onCommit = parent.onCommit
+            DispatchQueue.main.async { onCommit(value) }
+        }
+    }
+}
+
+/// Commits its text before leaving the window: switching Settings pages removes the field
+/// without taking focus, which would otherwise drop what was typed.
+private final class CommitOnRemovalField: NSTextField {
+    var onRemoval: (NSTextField) -> Void = { _ in }
+
+    override func viewWillMove(toWindow newWindow: NSWindow?) {
+        if newWindow == nil {
+            onRemoval(self)
+            abortEditing()
+        }
+        super.viewWillMove(toWindow: newWindow)
     }
 }

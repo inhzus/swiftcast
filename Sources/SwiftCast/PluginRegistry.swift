@@ -1,5 +1,6 @@
 import AppsPlugin
 import CalculatorPlugin
+import ClipboardPlugin
 import SwiftCastPluginKit
 
 /// The launcher's features, in the order their rows are shown. This is the only place the
@@ -10,6 +11,7 @@ enum PluginRegistry {
         [
             CalculatorPlugin(),
             AppsPlugin(),
+            ClipboardPlugin(),
         ]
     }
 }

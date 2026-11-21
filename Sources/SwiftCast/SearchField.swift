@@ -3,6 +3,7 @@ import AppKit
 /// Search field that reports every change to `onQueryChange`, including text an input method
 /// is still composing (e.g. pinyin before a candidate is picked), so results update on every key.
 final class SearchField: NSTextField {
+    static let defaultPlaceholder = "Search apps…"
     var onQueryChange: ((String) -> Void)?
 
     override class var cellClass: AnyClass? {
@@ -16,7 +17,7 @@ final class SearchField: NSTextField {
         drawsBackground = false
         focusRingType = .none
         font = .systemFont(ofSize: 24)
-        placeholderString = "Search apps…"
+        placeholderString = Self.defaultPlaceholder
         cell?.isScrollable = true
         cell?.wraps = false
 

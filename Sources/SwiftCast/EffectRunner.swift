@@ -19,6 +19,12 @@ enum EffectRunner {
         case .copy(let text):
             NSPasteboard.general.clearContents()
             NSPasteboard.general.setString(text, forType: .string)
+        case .copyImage(let url):
+            guard let data = try? Data(contentsOf: url) else { return }
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setData(data, forType: .png)
+        case .openView:
+            break  // handled by `LauncherViewModel`
         }
     }
 }

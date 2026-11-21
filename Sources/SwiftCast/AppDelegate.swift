@@ -28,7 +28,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     /// The startup sequence has run; until then it preloads icons itself.
     private var didActivate = false
     /// Plugins whose `activate` has been called. A plugin that starts disabled is activated
-    /// when first enabled.
+    /// when enabled, and one turned off is deactivated and activated again when turned on.
     private var activatedIDs: Set<String> = []
     /// When the panel was last hidden; a reopen soon after brings back the last search.
     private var lastHidden: Date?
@@ -206,6 +206,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private func pluginsToggled() {
         let enabled = enabledPlugins
         model.enabledIDs = Set(enabled.map(\.id))
+        for plugin in plugins where !model.enabledIDs.contains(plugin.id) && activatedIDs.contains(plugin.id) {
+            plugin.deactivate()
+            activatedIDs.remove(plugin.id)
+        }
+        if let view = model.openView, !model.enabledIDs.contains(view.id) { model.closeView() }
         model.refresh()
         guard didActivate else { return }
         Task {
