@@ -9,7 +9,7 @@ cask "swiftcast" do
   desc "Fast, native app launcher"
   homepage "https://github.com/inhzus/swiftcast"
 
-  depends_on macos: :sonoma
+  depends_on macos: :tahoe
 
   app "SwiftCast.app"
 

@@ -66,9 +66,7 @@ private final class SearchFieldCell: NSTextFieldCell {
         editor.isAutomaticDataDetectionEnabled = false
         editor.smartInsertDeleteEnabled = false
         editor.inlinePredictionType = .no
-        if #available(macOS 15.0, *) {
-            editor.writingToolsBehavior = .none
-        }
+        editor.writingToolsBehavior = .none
         return editor
     }()
 
