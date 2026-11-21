@@ -31,6 +31,9 @@ final class LauncherViewModel {
         }
     }
     private(set) var items: [LauncherItem] = []
+    /// The plugin whose own view is showing (see `Effect.openView`), if any. Searches go
+    /// only to it while it's open.
+    private(set) var openView: (any LauncherPlugin)?
 
     var onResultsChange: () -> Void = {}
     var onSelectionChange: () -> Void = {}
@@ -53,8 +56,17 @@ final class LauncherViewModel {
         query = text
     }
 
-    /// Clears the search and stops browsing history.
+    /// Clears the search, closes any plugin view and stops browsing history.
     func reset() {
+        historyCursor.reset()
+        openView = nil
+        query = ""
+    }
+
+    /// Goes back from a plugin's view to the search, empty.
+    func closeView() {
+        guard openView != nil else { return }
+        openView = nil
         historyCursor.reset()
         query = ""
     }
@@ -82,7 +94,7 @@ final class LauncherViewModel {
     }
 
     private func stepHistory(_ delta: Int) -> String? {
-        guard query.isEmpty || historyCursor.isBrowsing,
+        guard openView == nil, query.isEmpty || historyCursor.isBrowsing,
               let text = historyCursor.move(delta, through: history.entries) else { return nil }
         query = text
         return text
@@ -97,7 +109,9 @@ final class LauncherViewModel {
     func refresh() {
         let selected = selectedItem
         items = makeItems()
-        selection = items.firstIndex { $0 == selected } ?? 0
+        selection = items.firstIndex {
+            $0.pluginID == selected?.pluginID && $0.result.id == selected?.result.id
+        } ?? 0
         onResultsChange()
     }
 
@@ -124,7 +138,14 @@ final class LauncherViewModel {
     private func perform(actionAt index: Int) {
         guard let item = selectedItem, item.result.actions.indices.contains(index) else { return }
         let action = item.result.actions[index]
-        history.record(query)
+        if action.effect == .openView, let plugin = plugin(for: item) {
+            history.record(query)
+            historyCursor.reset()
+            openView = plugin
+            query = ""
+            return
+        }
+        if openView == nil { history.record(query) }
         // Hide first so the panel disappears without waiting on the effect.
         onDismiss()
         EffectRunner.run(action.effect)
@@ -132,7 +153,10 @@ final class LauncherViewModel {
     }
 
     private func makeItems() -> [LauncherItem] {
-        plugins.filter { enabledIDs.contains($0.id) }.flatMap { plugin in
+        if let openView {
+            return openView.viewResults(for: query).map { LauncherItem(pluginID: openView.id, result: $0) }
+        }
+        return plugins.filter { enabledIDs.contains($0.id) }.flatMap { plugin in
             plugin.results(for: query).prefix(plugin.resultLimit).map {
                 LauncherItem(pluginID: plugin.id, result: $0)
             }

@@ -47,6 +47,8 @@ public enum SettingsControl: Hashable, Sendable {
     /// A button with this title; pressing it, after `confirmation` if any, calls
     /// `performSettingsAction`.
     case button(String, enabled: Bool = true, confirmation: SettingsConfirmation? = nil)
+    /// A number field with a stepper, kept within `range`; changes arrive as `.int`.
+    case number(Int, range: ClosedRange<Int>)
     /// Read-only text.
     case value(String)
 }
@@ -82,4 +84,5 @@ public enum SettingsValue: Hashable, Sendable {
     case bool(Bool)
     case choice(String)
     case folders([URL])
+    case int(Int)
 }

@@ -3,9 +3,10 @@ import SwiftCastPluginKit
 
 /// The results list: a fixed pool of row views, created once.
 ///
-/// Plugins cap their results (`LauncherPlugin.resultLimit`), so the list never needs more
-/// rows than the pool holds. Updating it sets the content of rows whose item changed and hides
-/// the rest, so no views are created or torn down while the user types. One highlight view
+/// Plugins cap their results (`LauncherPlugin.resultLimit`), so search never needs more
+/// rows than the pool starts with. Updating it sets the content of rows whose item changed and
+/// hides the rest, so no views are created or torn down while the user types. A plugin's view
+/// can list more; the pool grows for it once and keeps the extra rows. One highlight view
 /// behind the rows marks the selection, and slides when the selection moves.
 final class ResultsListView: NSView {
     static let rowHeight: CGFloat = 44
@@ -22,21 +23,16 @@ final class ResultsListView: NSView {
         inset * 2 + CGFloat(rows) * rowHeight + CGFloat(max(rows - 1, 0)) * rowSpacing
     }
 
-    private let rows: [ResultRowView]
+    private var rows: [ResultRowView] = []
     private let highlight = SelectionHighlight()
     private var count = 0
     private var selectedIndex: Int?
 
     init(capacity: Int) {
-        rows = (0..<capacity).map { _ in ResultRowView() }
         super.init(frame: .zero)
         highlight.isHidden = true
         addSubview(highlight)
-        for (index, row) in rows.enumerated() {
-            row.isHidden = true
-            row.onClick = { [unowned self] in onClick(index) }
-            addSubview(row)
-        }
+        addRows(capacity)
         addTrackingArea(NSTrackingArea(
             rect: .zero,
             options: [.mouseMoved, .activeAlways, .inVisibleRect],
@@ -50,9 +46,22 @@ final class ResultsListView: NSView {
 
     override var isFlipped: Bool { true }
 
-    /// Shows `items` (at most `capacity`), touching only rows whose content changed.
+    private func addRows(_ count: Int) {
+        for _ in 0..<count {
+            let index = rows.count
+            let row = ResultRowView()
+            row.isHidden = true
+            row.onClick = { [unowned self] in onClick(index) }
+            row.frame = rowFrame(at: index)
+            rows.append(row)
+            addSubview(row)
+        }
+    }
+
+    /// Shows `items`, touching only rows whose content changed.
     func update(_ items: [ResultItem]) {
-        let newCount = min(items.count, rows.count)
+        if items.count > rows.count { addRows(items.count - rows.count) }
+        let newCount = items.count
         for index in 0..<newCount {
             rows[index].configure(with: items[index])
             rows[index].isHidden = false
@@ -126,15 +135,19 @@ final class ResultsListView: NSView {
     }
 
     private func layoutRows() {
-        let width = bounds.width - Self.inset * 2
         for (index, row) in rows.enumerated() {
-            row.frame = NSRect(
-                x: Self.inset,
-                y: Self.inset + CGFloat(index) * (Self.rowHeight + Self.rowSpacing),
-                width: width,
-                height: Self.rowHeight
-            )
+            row.frame = rowFrame(at: index)
         }
+        if let selectedIndex { highlight.frame = rows[selectedIndex].frame }
+    }
+
+    private func rowFrame(at index: Int) -> NSRect {
+        NSRect(
+            x: Self.inset,
+            y: Self.inset + CGFloat(index) * (Self.rowHeight + Self.rowSpacing),
+            width: max(bounds.width - Self.inset * 2, 0),
+            height: Self.rowHeight
+        )
     }
 }
 

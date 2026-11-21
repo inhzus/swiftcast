@@ -18,6 +18,8 @@ final class LauncherViewController: NSViewController, NSTextFieldDelegate {
     static let cardHintsHeight: CGFloat = 36
     static let emptyCardHeight: CGFloat = 64
     static let maxVisibleRows = 8
+    /// Width of the list in a plugin's view; the preview takes the rest.
+    static let viewListWidth: CGFloat = 270
 
     static var maxCardHeight: CGFloat {
         cardHeaderHeight + ResultsListView.height(forRows: maxVisibleRows) + cardHintsHeight
@@ -35,14 +37,20 @@ final class LauncherViewController: NSViewController, NSTextFieldDelegate {
         case hidden
         case empty
         case results(rows: Int)
+        /// A plugin's view: list and preview, always at full height.
+        case view
     }
     private var cardState = CardState.hidden
     /// What the heading and hints currently show; see `selectionChanged(animated:)`.
     private struct Footer: Equatable {
         var label: String
         var actions: [String]
+        var inView: Bool
     }
     private var lastFooter: Footer?
+    /// The plugin view the field and card are set up for, so they change only on entering
+    /// or leaving one.
+    private var shownViewID: String?
     /// Keys for a row's actions, in order.
     private static let actionKeys = ["↩", "⌘↩"]
 
@@ -57,6 +65,8 @@ final class LauncherViewController: NSViewController, NSTextFieldDelegate {
     private let cardBody = NSView()
     private let scrollView = NSScrollView()
     private let emptyLabel = NSTextField(labelWithString: "No results")
+    private let previewView = PreviewView()
+    private let previewDivider = NSBox()
     private let sectionLabel = NSTextField(labelWithString: "")
     private let hintsView = KeyHintsView(hints: [])
     private let clearButton = NSButton(
@@ -85,6 +95,7 @@ final class LauncherViewController: NSViewController, NSTextFieldDelegate {
         case .empty: emptyCardHeight
         case .results(let rows):
             cardHeaderHeight + ResultsListView.height(forRows: min(rows, maxVisibleRows)) + cardHintsHeight
+        case .view: maxCardHeight
         }
     }
 
@@ -176,7 +187,8 @@ final class LauncherViewController: NSViewController, NSTextFieldDelegate {
         // The body is laid out at the card's target size and pinned to its top, so while the
         // card animates to a new height its content is revealed or clipped, never stretched.
         cardBody.autoresizingMask = [.width, .minYMargin]
-        for view in [sectionLabel, scrollView, emptyLabel, hintsView] as [NSView] {
+        previewDivider.boxType = .separator
+        for view in [sectionLabel, scrollView, previewDivider, previewView, emptyLabel, hintsView] as [NSView] {
             cardBody.addSubview(view)
         }
         cardContent.addSubview(cardBody)
@@ -188,25 +200,28 @@ final class LauncherViewController: NSViewController, NSTextFieldDelegate {
         let height = Self.height(for: state)
         cardBody.frame = NSRect(x: 0, y: cardContent.bounds.height - height, width: width, height: height)
 
-        let isResults = if case .results = state { true } else { false }
+        let isView = state == .view
+        let isResults = if case .results = state { true } else { isView }
         sectionLabel.isHidden = !isResults
         scrollView.isHidden = !isResults
         hintsView.isHidden = !isResults
+        previewView.isHidden = !isView
+        previewDivider.isHidden = !isView
         emptyLabel.isHidden = state != .empty
 
         sectionLabel.frame = NSRect(x: 20, y: height - 21, width: 300, height: 15)
-        scrollView.frame = NSRect(
-            x: 0,
-            y: Self.cardHintsHeight,
-            width: width,
-            height: max(height - Self.cardHeaderHeight - Self.cardHintsHeight, 0)
-        )
+        let bodyHeight = max(height - Self.cardHeaderHeight - Self.cardHintsHeight, 0)
+        let listWidth = isView ? Self.viewListWidth : width
+        scrollView.frame = NSRect(x: 0, y: Self.cardHintsHeight, width: listWidth, height: bodyHeight)
+        previewDivider.frame = NSRect(x: listWidth, y: Self.cardHintsHeight + 8, width: 1, height: max(bodyHeight - 16, 0))
+        previewView.frame = NSRect(
+            x: listWidth + 1, y: Self.cardHintsHeight, width: width - listWidth - 1, height: bodyHeight)
         layOutHints()
         emptyLabel.frame = NSRect(x: 0, y: (height - 18) / 2, width: width, height: 18)
 
-        let listWidth = scrollView.contentSize.width
-        if resultsList.frame.width != listWidth {
-            resultsList.setFrameSize(NSSize(width: listWidth, height: resultsList.frame.height))
+        let documentWidth = scrollView.contentSize.width
+        if resultsList.frame.width != documentWidth {
+            resultsList.setFrameSize(NSSize(width: documentWidth, height: resultsList.frame.height))
         }
     }
 
@@ -365,6 +380,7 @@ final class LauncherViewController: NSViewController, NSTextFieldDelegate {
     // MARK: - Model → view
 
     private func resultsChanged() {
+        if shownViewID != model.openView?.id { viewChanged() }
         // Empty results only hide the list, leaving its rows as they are, so the next query
         // changes as few rows as possible.
         if !model.items.isEmpty {
@@ -374,7 +390,9 @@ final class LauncherViewController: NSViewController, NSTextFieldDelegate {
         if clearButton.isHidden == hasQuery {
             clearButton.isHidden = !hasQuery
         }
-        let state: CardState = if !model.items.isEmpty {
+        let state: CardState = if model.openView != nil {
+            model.items.isEmpty ? .empty : .view
+        } else if !model.items.isEmpty {
             .results(rows: model.items.count)
         } else {
             hasQuery ? .empty : .hidden
@@ -383,21 +401,39 @@ final class LauncherViewController: NSViewController, NSTextFieldDelegate {
         selectionChanged(animated: false)
     }
 
+    /// Entering or leaving a plugin's view: the field shows the view's (empty) search and
+    /// placeholder.
+    private func viewChanged() {
+        shownViewID = model.openView?.id
+        searchField.stringValue = model.query
+        searchField.placeholderString = model.openView.map { "Search \($0.viewTitle ?? $0.name)…" }
+            ?? SearchField.defaultPlaceholder
+        emptyLabel.stringValue = model.openView == nil ? "No results" : "Nothing here yet"
+    }
+
     /// Moves the highlight, and sets the heading and hints for the selected row's plugin and
-    /// actions. Only touches them when they change, since even an identical `stringValue`
-    /// redraws its label.
+    /// actions, and the preview in a plugin's view. Only touches them when they change, since
+    /// even an identical `stringValue` redraws its label.
     private func selectionChanged(animated: Bool) {
         let index = model.items.indices.contains(model.selection) ? model.selection : nil
         resultsList.select(index, animated: animated && isPresented)
         guard let item = model.selectedItem else { return }
+        if model.openView != nil {
+            previewView.show(item.result.preview, detail: item.result.previewDetail)
+        }
         let plugin = model.plugin(for: item)
-        let label = (model.query.isEmpty ? plugin?.emptyQueryTitle : nil) ?? plugin?.sectionTitle ?? ""
+        let label = if let view = model.openView {
+            view.viewTitle ?? view.name
+        } else {
+            (model.query.isEmpty ? plugin?.emptyQueryTitle : nil) ?? plugin?.sectionTitle ?? ""
+        }
         let actions = item.result.actions.prefix(Self.actionKeys.count).map(\.title)
-        let footer = Footer(label: label, actions: actions)
+        let footer = Footer(label: label, actions: actions, inView: model.openView != nil)
         guard footer != lastFooter else { return }
         lastFooter = footer
         sectionLabel.stringValue = label
-        hintsView.hints = zip(Self.actionKeys, actions).map { ($0, $1) } + [("esc", "Close")]
+        hintsView.hints = zip(Self.actionKeys, actions).map { ($0, $1) }
+            + [("esc", footer.inView ? "Back" : "Close")]
         layOutHints()
     }
 
@@ -422,7 +458,9 @@ final class LauncherViewController: NSViewController, NSTextFieldDelegate {
         case #selector(NSResponder.insertNewline(_:)):
             model.performPrimary()
         case #selector(NSResponder.cancelOperation(_:)):
-            model.onDismiss()
+            if model.openView != nil { model.closeView() } else { model.onDismiss() }
+        case #selector(NSResponder.deleteBackward(_:)) where model.openView != nil && textView.string.isEmpty:
+            model.closeView()
         case NSSelectorFromString("noop:") where Self.isCommandReturn(NSApp.currentEvent):
             model.performSecondary()
         default:
@@ -502,5 +540,75 @@ private final class KeyHintsView: NSView {
             hint.action.draw(at: NSPoint(x: x, y: textY), withAttributes: actionAttributes)
             x += ceil(hint.action.size(withAttributes: actionAttributes).width) + Self.spacing
         }
+    }
+}
+
+/// The selected row's preview in a plugin's view: text in a scrollable, selectable view, or an
+/// image scaled to fit, with a grey detail line below.
+private final class PreviewView: NSView {
+    private static let padding: CGFloat = 16
+    private static let detailHeight: CGFloat = 16
+
+    private let textScroll = NSTextView.scrollableTextView()
+    private let imageView = NSImageView()
+    private let detailLabel = NSTextField(labelWithString: "")
+    private var shown: ResultPreview?
+
+    init() {
+        super.init(frame: .zero)
+        let text = textView
+        text.isEditable = false
+        text.isSelectable = true
+        text.drawsBackground = false
+        text.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
+        text.textColor = .labelColor
+        text.textContainerInset = .zero
+        textScroll.drawsBackground = false
+        textScroll.autohidesScrollers = true
+        imageView.imageScaling = .scaleProportionallyDown
+        detailLabel.font = .systemFont(ofSize: 11)
+        detailLabel.textColor = .tertiaryLabelColor
+        detailLabel.lineBreakMode = .byTruncatingTail
+        for view in [textScroll, imageView, detailLabel] as [NSView] { addSubview(view) }
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) is not used")
+    }
+
+    private var textView: NSTextView { textScroll.documentView as! NSTextView }
+
+    func show(_ preview: ResultPreview?, detail: String?) {
+        detailLabel.stringValue = detail ?? ""
+        guard preview != shown else { return }
+        shown = preview
+        switch preview {
+        case .text(let string):
+            textView.string = string
+            textView.scrollToBeginningOfDocument(nil)
+            imageView.image = nil
+        case .image(let url):
+            imageView.image = NSImage(contentsOf: url)
+            textView.string = ""
+        case nil:
+            imageView.image = nil
+            textView.string = ""
+        }
+        textScroll.isHidden = if case .text = preview { false } else { true }
+        imageView.isHidden = if case .image = preview { false } else { true }
+    }
+
+    override func layout() {
+        super.layout()
+        let padding = Self.padding
+        let content = NSRect(
+            x: padding,
+            y: padding + Self.detailHeight + 6,
+            width: max(bounds.width - padding * 2, 0),
+            height: max(bounds.height - padding * 2 - Self.detailHeight - 6, 0)
+        )
+        textScroll.frame = content
+        imageView.frame = content
+        detailLabel.frame = NSRect(x: padding, y: padding, width: content.width, height: Self.detailHeight)
     }
 }
