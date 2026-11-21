@@ -57,9 +57,8 @@ brew install --cask inhzus/tap/swiftcast
 
 ## Usage
 
-SwiftCast lives in the menu bar. Open it with **⌘Space**, which Spotlight also uses: turn
-Spotlight's off (System Settings → Keyboard → Keyboard Shortcuts… → Spotlight) or pick
-another shortcut in SwiftCast's Settings.
+SwiftCast lives in the menu bar. Open it with **⌥Space**, or pick another shortcut in
+SwiftCast's Settings.
 
 | Key | Action |
 | --- | --- |
