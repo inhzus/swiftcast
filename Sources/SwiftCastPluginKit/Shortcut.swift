@@ -8,8 +8,8 @@ public struct Shortcut: Codable, Equatable, Sendable {
     public static let option = 1 << 11
     public static let control = 1 << 12
 
-    /// ⌘Space.
-    public static let `default` = Shortcut(keyCode: 49, modifiers: command)
+    /// ⌥Space.
+    public static let `default` = Shortcut(keyCode: 49, modifiers: option)
 
     /// Virtual key codes of F1–F20, which work as shortcuts without a modifier.
     static let functionKeys: Set<Int> = [

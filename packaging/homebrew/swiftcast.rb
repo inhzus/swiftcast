@@ -24,10 +24,4 @@ cask "swiftcast" do
   uninstall quit: "dev.swiftcast.app"
 
   zap trash: "~/Library/Preferences/dev.swiftcast.app.plist"
-
-  caveats <<~EOS
-    SwiftCast's default shortcut, ⌘Space, is taken by Spotlight. Either turn off Spotlight's
-    shortcut in System Settings → Keyboard → Keyboard Shortcuts → Spotlight, or pick another
-    shortcut in SwiftCast's Settings (⌘,).
-  EOS
 end
