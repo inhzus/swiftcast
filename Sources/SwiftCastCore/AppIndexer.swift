@@ -75,6 +75,13 @@ public struct AppIndexer: Sendable {
         if name.hasSuffix(".app") {
             name = String(name.dropLast(4))
         }
-        return AppEntry(name: name, bundleID: Bundle(url: url)?.bundleIdentifier, url: url)
+        let bundle = Bundle(url: url)
+        let info = bundle?.infoDictionary
+        let alternates = [
+            info?["CFBundleDisplayName"] as? String,
+            info?["CFBundleName"] as? String,
+            url.deletingPathExtension().lastPathComponent,
+        ].compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+        return AppEntry(name: name, bundleID: bundle?.bundleIdentifier, url: url, alternateNames: alternates)
     }
 }

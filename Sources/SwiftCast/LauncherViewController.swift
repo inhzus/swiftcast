@@ -24,7 +24,12 @@ final class LauncherViewController: NSViewController, NSTextFieldDelegate {
     private let footerSeparator = NSBox()
     private let emptyLabel = NSTextField(labelWithString: "No matching applications")
     private let sectionLabel = NSTextField(labelWithString: "")
-    private let hintsLabel = NSTextField(labelWithAttributedString: LauncherViewController.hints)
+    private let hintsView = KeyHintsView(hints: [("↩", "Open"), ("⌘↩", "Show in Finder"), ("esc", "Close")])
+    private let clearButton = NSButton(
+        image: NSImage(systemSymbolName: "xmark.circle.fill", accessibilityDescription: "Clear search")!,
+        target: nil,
+        action: nil
+    )
 
     init(model: LauncherViewModel) {
         self.model = model
@@ -47,6 +52,13 @@ final class LauncherViewController: NSViewController, NSTextFieldDelegate {
             if model.query != query { model.query = query }
         }
 
+        clearButton.isBordered = false
+        clearButton.contentTintColor = .tertiaryLabelColor
+        clearButton.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 15, weight: .regular)
+        clearButton.target = self
+        clearButton.action = #selector(clearQuery)
+        clearButton.toolTip = "Clear search"
+
         headerSeparator.boxType = .separator
         footerSeparator.boxType = .separator
 
@@ -55,6 +67,9 @@ final class LauncherViewController: NSViewController, NSTextFieldDelegate {
             guard model.results.indices.contains(index) else { return }
             model.selection = index
             model.launchSelected()
+        }
+        resultsList.onHover = { [unowned self] index in
+            if model.results.indices.contains(index) { model.selection = index }
         }
 
         scrollView.documentView = resultsList
@@ -69,11 +84,11 @@ final class LauncherViewController: NSViewController, NSTextFieldDelegate {
 
         // The header uses constraints; the body below it is laid out by frame in
         // `viewDidLayout()`, since parts of it come and go as the panel changes height.
-        for view in [icon, searchField] as [NSView] {
+        for view in [icon, searchField, clearButton] as [NSView] {
             view.translatesAutoresizingMaskIntoConstraints = false
             root.addSubview(view)
         }
-        for view in [headerSeparator, scrollView, emptyLabel, footerSeparator, sectionLabel, hintsLabel] as [NSView] {
+        for view in [headerSeparator, scrollView, emptyLabel, footerSeparator, sectionLabel, hintsView] as [NSView] {
             root.addSubview(view)
         }
         NSLayoutConstraint.activate([
@@ -82,9 +97,13 @@ final class LauncherViewController: NSViewController, NSTextFieldDelegate {
             icon.widthAnchor.constraint(equalToConstant: 24),
 
             searchField.leadingAnchor.constraint(equalTo: icon.trailingAnchor, constant: 10),
-            searchField.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -18),
+            searchField.trailingAnchor.constraint(equalTo: clearButton.leadingAnchor, constant: -8),
             searchField.topAnchor.constraint(equalTo: root.topAnchor, constant: 16),
             searchField.heightAnchor.constraint(equalToConstant: 28),
+
+            clearButton.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -18),
+            clearButton.centerYAnchor.constraint(equalTo: searchField.centerYAnchor),
+            clearButton.widthAnchor.constraint(equalToConstant: 20),
         ])
 
         view = root
@@ -101,10 +120,14 @@ final class LauncherViewController: NSViewController, NSTextFieldDelegate {
 
         let footerHeight = footerSeparator.isHidden ? 0 : Self.footerHeight
         footerSeparator.frame = NSRect(x: 0, y: footerHeight - 1, width: width, height: 1)
-        let labelY = (footerHeight - 15) / 2
-        sectionLabel.frame = NSRect(x: 18, y: labelY, width: 200, height: 15)
-        let hintsWidth = ceil(Self.hints.size().width) + 4
-        hintsLabel.frame = NSRect(x: width - 18 - hintsWidth, y: labelY, width: hintsWidth, height: 15)
+        sectionLabel.frame = NSRect(x: 18, y: (footerHeight - 15) / 2, width: 200, height: 15)
+        let hintsSize = hintsView.intrinsicContentSize
+        hintsView.frame = NSRect(
+            x: width - 18 - hintsSize.width,
+            y: (footerHeight - hintsSize.height) / 2,
+            width: hintsSize.width,
+            height: hintsSize.height
+        )
 
         scrollView.frame = NSRect(x: 0, y: footerHeight, width: width, height: max(bodyTop - 1 - footerHeight, 0))
         emptyLabel.frame = NSRect(x: 0, y: (bodyTop - 18) / 2, width: width, height: 18)
@@ -123,19 +146,6 @@ final class LauncherViewController: NSViewController, NSTextFieldDelegate {
         }
         return model.query.isEmpty ? Self.headerHeight : Self.headerHeight + Self.messageHeight
     }
-
-    /// "Open ↩   Show in Finder ⌘↩", with the keys a step brighter than their actions.
-    private static let hints: NSAttributedString = {
-        let font = NSFont.systemFont(ofSize: 11, weight: .medium)
-        let action: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: NSColor.tertiaryLabelColor]
-        let key: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: NSColor.secondaryLabelColor]
-        let text = NSMutableAttributedString()
-        for (index, (name, keys)) in [("Open", "↩"), ("Show in Finder", "⌘↩")].enumerated() {
-            text.append(NSAttributedString(string: (index > 0 ? "     " : "") + name + "  ", attributes: action))
-            text.append(NSAttributedString(string: keys, attributes: key))
-        }
-        return text
-    }()
 
     /// Exercises the typing path once (focus, insert text, search, fill rows) so its one-time
     /// setup happens before the user's first key. `prepareForShow()` clears it afterward.
@@ -161,13 +171,14 @@ final class LauncherViewController: NSViewController, NSTextFieldDelegate {
         // Empty results only hide the list, leaving its rows as they are, so the next query
         // changes as few rows as possible.
         if !model.results.isEmpty {
-            PerfLog.measure("reload") { resultsList.update(model.results) }
+            PerfLog.measure("reload") { resultsList.update(model.results, detail: model.detail(for:)) }
         }
         let isEmpty = model.results.isEmpty
         scrollView.isHidden = isEmpty
         footerSeparator.isHidden = isEmpty
         sectionLabel.isHidden = isEmpty
-        hintsLabel.isHidden = isEmpty
+        hintsView.isHidden = isEmpty
+        clearButton.isHidden = model.query.isEmpty
         headerSeparator.isHidden = isEmpty && model.query.isEmpty
         emptyLabel.isHidden = !isEmpty || model.query.isEmpty
         sectionLabel.stringValue = model.query.isEmpty ? "Recent" : "Applications"
@@ -178,6 +189,14 @@ final class LauncherViewController: NSViewController, NSTextFieldDelegate {
 
     private func selectionChanged() {
         resultsList.select(model.results.indices.contains(model.selection) ? model.selection : nil)
+    }
+
+    @objc private func clearQuery() {
+        searchField.stringValue = ""
+        model.query = ""
+        if searchField.currentEditor() == nil {
+            view.window?.makeFirstResponder(searchField)
+        }
     }
 
     // MARK: - NSTextFieldDelegate
@@ -206,5 +225,60 @@ final class LauncherViewController: NSViewController, NSTextFieldDelegate {
         guard let event, event.type == .keyDown else { return false }
         return event.modifierFlags.contains(.command)
             && (event.keyCode == 36 || event.keyCode == 76) // return, keypad enter
+    }
+}
+
+/// Keyboard hints drawn as key caps followed by their action, e.g. [↩] Open.
+/// Drawn in one pass, with no subviews.
+private final class KeyHintsView: NSView {
+    private static let font = NSFont.systemFont(ofSize: 11, weight: .medium)
+    private static let capHeight: CGFloat = 18
+    private static let capPadding: CGFloat = 5
+    private static let gap: CGFloat = 5
+    private static let spacing: CGFloat = 14
+
+    private let hints: [(keys: String, action: String)]
+
+    init(hints: [(keys: String, action: String)]) {
+        self.hints = hints
+        super.init(frame: .zero)
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) is not used")
+    }
+
+    override var intrinsicContentSize: NSSize {
+        let width = hints.enumerated().reduce(CGFloat(0)) { total, item in
+            total + (item.offset > 0 ? Self.spacing : 0) + Self.width(of: item.element)
+        }
+        return NSSize(width: ceil(width), height: Self.capHeight)
+    }
+
+    private static func width(of hint: (keys: String, action: String)) -> CGFloat {
+        capWidth(hint.keys) + gap + ceil(hint.action.size(withAttributes: [.font: font]).width)
+    }
+
+    private static func capWidth(_ keys: String) -> CGFloat {
+        max(ceil(keys.size(withAttributes: [.font: font]).width) + capPadding * 2, capHeight)
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        let keyAttributes: [NSAttributedString.Key: Any] = [.font: Self.font, .foregroundColor: NSColor.secondaryLabelColor]
+        let actionAttributes: [NSAttributedString.Key: Any] = [.font: Self.font, .foregroundColor: NSColor.tertiaryLabelColor]
+        let textHeight = ("A" as NSString).size(withAttributes: keyAttributes).height
+        let textY = (bounds.height - textHeight) / 2
+        var x: CGFloat = 0
+        for hint in hints {
+            let capWidth = Self.capWidth(hint.keys)
+            let cap = NSRect(x: x, y: (bounds.height - Self.capHeight) / 2, width: capWidth, height: Self.capHeight)
+            NSColor.labelColor.withAlphaComponent(0.08).setFill()
+            NSBezierPath(roundedRect: cap, xRadius: 4, yRadius: 4).fill()
+            let keysWidth = hint.keys.size(withAttributes: keyAttributes).width
+            hint.keys.draw(at: NSPoint(x: cap.midX - keysWidth / 2, y: textY), withAttributes: keyAttributes)
+            x = cap.maxX + Self.gap
+            hint.action.draw(at: NSPoint(x: x, y: textY), withAttributes: actionAttributes)
+            x += ceil(hint.action.size(withAttributes: actionAttributes).width) + Self.spacing
+        }
     }
 }

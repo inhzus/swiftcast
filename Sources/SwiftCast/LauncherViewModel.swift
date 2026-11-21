@@ -18,7 +18,7 @@ final class LauncherViewModel {
             if selection != oldValue { onSelectionChange() }
         }
     }
-    private(set) var results: [AppEntry] = []
+    private(set) var results: [SearchResult] = []
 
     var onResultsChange: () -> Void = {}
     var onSelectionChange: () -> Void = {}
@@ -61,7 +61,12 @@ final class LauncherViewModel {
         NSWorkspace.shared.activateFileViewerSelecting([app.url])
     }
 
+    /// Text that tells `app` apart from other apps with the same name, if any.
+    func detail(for app: AppEntry) -> String? {
+        engine.detail(for: app)
+    }
+
     private var selectedApp: AppEntry? {
-        results.indices.contains(selection) ? results[selection] : nil
+        results.indices.contains(selection) ? results[selection].app : nil
     }
 }
