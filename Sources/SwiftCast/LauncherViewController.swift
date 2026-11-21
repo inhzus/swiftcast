@@ -19,6 +19,12 @@ final class LauncherViewController: NSViewController, NSTextFieldDelegate {
     var onHeightChange: (CGFloat) -> Void = { _ in }
 
     private let resultsList = ResultsListView(capacity: LauncherViewModel.resultLimit)
+    /// What the views outside the list currently show; see `resultsChanged()`.
+    private struct Chrome: Equatable {
+        var isEmpty: Bool
+        var hasQuery: Bool
+    }
+    private var lastChrome: Chrome?
     private let scrollView = NSScrollView()
     private let headerSeparator = NSBox()
     private let footerSeparator = NSBox()
@@ -173,17 +179,27 @@ final class LauncherViewController: NSViewController, NSTextFieldDelegate {
         if !model.results.isEmpty {
             PerfLog.measure("reload") { resultsList.update(model.results, detail: model.detail(for:)) }
         }
+        // Most keys change only the rows. The chrome and layout are touched only when they
+        // change, since even an identical `stringValue` redraws its label.
         let isEmpty = model.results.isEmpty
-        scrollView.isHidden = isEmpty
-        footerSeparator.isHidden = isEmpty
-        sectionLabel.isHidden = isEmpty
-        hintsView.isHidden = isEmpty
-        clearButton.isHidden = model.query.isEmpty
-        headerSeparator.isHidden = isEmpty && model.query.isEmpty
-        emptyLabel.isHidden = !isEmpty || model.query.isEmpty
-        sectionLabel.stringValue = model.query.isEmpty ? "Recent" : "Applications"
-        onHeightChange(preferredHeight)
-        view.needsLayout = true
+        let chrome = Chrome(isEmpty: isEmpty, hasQuery: !model.query.isEmpty)
+        if chrome != lastChrome {
+            lastChrome = chrome
+            scrollView.isHidden = isEmpty
+            footerSeparator.isHidden = isEmpty
+            sectionLabel.isHidden = isEmpty
+            hintsView.isHidden = isEmpty
+            clearButton.isHidden = !chrome.hasQuery
+            headerSeparator.isHidden = isEmpty && !chrome.hasQuery
+            emptyLabel.isHidden = !isEmpty || !chrome.hasQuery
+            sectionLabel.stringValue = chrome.hasQuery ? "Applications" : "Recent"
+            view.needsLayout = true
+        }
+        let height = preferredHeight
+        if height != view.frame.height {
+            onHeightChange(height)
+            view.needsLayout = true
+        }
         selectionChanged()
     }
 
