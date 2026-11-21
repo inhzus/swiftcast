@@ -6,8 +6,10 @@ import SwiftCastPluginKit
 final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private let settings = AppSettings()
     private let plugins = PluginRegistry.makePlugins()
-    private let queryHistory = QueryHistory(database: .open("swiftcast", migrations: QueryHistory.migrations))
-    private lazy var model = LauncherViewModel(plugins: plugins, history: queryHistory)
+    private let database = Database.open("swiftcast", migrations: AppDatabase.migrations)
+    private lazy var queryHistory = QueryHistory(database: database)
+    private lazy var usage = UsageStore(database: database)
+    private lazy var model = LauncherViewModel(plugins: plugins, history: queryHistory, usage: usage)
     private lazy var launcher = LauncherViewController(model: model)
     private lazy var settingsWindow = SettingsWindowController { [unowned self] in
         SettingsView(settings: settings, plugins: plugins, actions: SettingsActions(
@@ -17,6 +19,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             },
             clearSearchHistory: { [unowned self] in
                 queryHistory.clear()
+                model.refresh()
+            },
+            clearUsage: { [unowned self] in
+                usage.clear()
                 model.refresh()
             }
         ))
@@ -182,7 +188,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         plugins.filter { !settings.disabledPlugins.contains($0.id) }
     }
 
-    private lazy var pluginContext = PluginContext { [weak self] in self?.pluginResultsChanged() }
+    /// What `plugin` is offered: its rows' usage, by their IDs.
+    private func context(for plugin: any LauncherPlugin) -> PluginContext {
+        let pluginID = plugin.id
+        return PluginContext(
+            resultsDidChange: { [weak self] in self?.pluginResultsChanged() },
+            usageBoost: { [unowned self] in usage.boost(for: UsageStore.Key(pluginID: pluginID, itemID: $0)) },
+            frecency: { [unowned self] in usage.frecency(for: UsageStore.Key(pluginID: pluginID, itemID: $0)) },
+            importUsage: { [unowned self] in usage.import($0, for: pluginID) })
+    }
 
     /// Activates the enabled plugins, renders their icons, then prewarms the panel.
     private func activatePlugins() {
@@ -199,7 +213,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     private func activate(_ plugin: any LauncherPlugin) async {
         guard activatedIDs.insert(plugin.id).inserted else { return }
-        await plugin.activate(pluginContext)
+        await plugin.activate(context(for: plugin))
     }
 
     /// A plugin was turned on or off in Settings.

@@ -6,7 +6,7 @@ import Testing
 @MainActor
 struct SearchEngineTests {
     private func makeEngine(_ apps: [AppEntry]) -> SearchEngine {
-        let engine = SearchEngine(usage: UsageStore(database: .inMemory(migrations: AppsPlugin.migrations)))
+        let engine = SearchEngine()
         engine.update(apps: apps)
         return engine
     }
@@ -29,6 +29,17 @@ struct SearchEngineTests {
         #expect(engine.results(for: "term").map(\.app.name) == ["Terminal", "iTerm"])
     }
 
+    @Test func resultsCarryTheKindOfMatch() {
+        let engine = makeEngine(["Safari", "System Settings", "Visual Studio Code"])
+        #expect(engine.results(for: "safari").first?.match == .exact)
+        #expect(engine.results(for: "saf").first?.match == .prefix)
+        #expect(engine.results(for: "ss").first?.match == .initials)
+        #expect(engine.results(for: "studio").first?.match == .wordPrefix)
+        #expect(engine.results(for: "ari").first?.match == .substring)
+        #expect(engine.results(for: "vsc").first?.match == .initials)
+        #expect(engine.results(for: "sfr").first?.match == .fuzzy)
+    }
+
     @Test func resultsCarryMatchedIndices() {
         let engine = makeEngine(["System Settings"])
         #expect(engine.results(for: "sys").first?.matchedIndices == [0, 1, 2])
@@ -39,14 +50,14 @@ struct SearchEngineTests {
         #expect(engine.results(for: "ma").first?.app.name == "Mail")
 
         let maps = engine.apps.first { $0.name == "Maps" }!
-        for _ in 0..<5 { engine.usage.increment(maps.id) }
+        engine.usageBoost = { $0 == maps.id ? 30 : 0 }
         #expect(engine.results(for: "ma").first?.app.name == "Maps")
     }
 
     @Test func usageNeverBeatsABetterKindOfMatch() {
         let engine = makeEngine(["Notes", "Notes Helper Thing"])
         let helper = engine.apps.first { $0.name != "Notes" }!
-        for _ in 0..<1000 { engine.usage.increment(helper.id) }
+        engine.usageBoost = { $0 == helper.id ? 60 : 0 }
         #expect(engine.results(for: "notes").first?.app.name == "Notes")
     }
 
@@ -54,12 +65,10 @@ struct SearchEngineTests {
         let engine = makeEngine(["Mail", "Maps", "Notes"])
         #expect(engine.results(for: "").isEmpty)
 
-        let now = Date()
-        let notes = engine.apps.first { $0.name == "Notes" }!
-        let mail = engine.apps.first { $0.name == "Mail" }!
-        for _ in 0..<3 { engine.usage.increment(mail.id, at: now.addingTimeInterval(-30 * 86_400)) }
-        engine.usage.increment(notes.id, at: now)
-        #expect(engine.results(for: "", now: now).map(\.app.name) == ["Notes", "Mail"])
+        let frecency = [engine.apps.first { $0.name == "Notes" }!.id: 1.0,
+                        engine.apps.first { $0.name == "Mail" }!.id: 0.2]
+        engine.frecency = { frecency[$0] ?? 0 }
+        #expect(engine.results(for: "").map(\.app.name) == ["Notes", "Mail"])
     }
 
     @Test func alternateNamesMatchWithASmallPenalty() {

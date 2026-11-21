@@ -30,7 +30,8 @@ public final class CalculatorPlugin: LauncherPlugin {
             highlightedIndices: Array(0..<calculation.display.count),
             detail: ["= " + calculation.expression, calculation.note].compactMap { $0 }.joined(separator: " · "),
             icon: .file(iconPath),
-            actions: [ResultAction("Copy", .copy(calculation.copyText))]
+            actions: [ResultAction("Copy", .copy(calculation.copyText))],
+            match: .exact
         )
     }
 }

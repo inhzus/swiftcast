@@ -1,16 +1,20 @@
 import Foundation
+import SwiftCastPluginKit
 
-/// An app in the results, with the positions in its name that matched the query.
+/// An app in the results, with how it matched the query and the positions in its name that
+/// matched.
 struct SearchResult: Hashable, Identifiable, Sendable {
     let app: AppEntry
     /// Character offsets into `app.name`; empty when an alternate name matched.
     let matchedIndices: [Int]
+    let match: MatchQuality
 
     var id: String { app.id }
 
-    init(app: AppEntry, matchedIndices: [Int] = []) {
+    init(app: AppEntry, matchedIndices: [Int] = [], match: MatchQuality = .prefix) {
         self.app = app
         self.matchedIndices = matchedIndices
+        self.match = match
     }
 }
 
@@ -21,15 +25,13 @@ final class SearchEngine {
     static let alternateNamePenalty = 50
 
     private(set) var apps: [AppEntry] = []
-    let usage: UsageStore
+    /// How much the user opens each app, by ID; the app supplies these (see `PluginContext`).
+    var usageBoost: (String) -> Int = { _ in 0 }
+    var frecency: (String) -> Double = { _ in 0 }
     /// Prepared match candidates, parallel to `apps`: the name first, then alternate names.
     private var candidates: [[FuzzyMatcher.Candidate]] = []
     /// Text that tells apart apps sharing a name, keyed by app ID.
     private var details: [String: String] = [:]
-
-    init(usage: UsageStore) {
-        self.usage = usage
-    }
 
     func update(apps: [AppEntry]) {
         self.apps = apps
@@ -39,19 +41,20 @@ final class SearchEngine {
         details = Self.details(for: apps)
     }
 
-    func results(for query: String, limit: Int = 20, now: Date = Date()) -> [SearchResult] {
+    func results(for query: String, limit: Int = 20) -> [SearchResult] {
         var scored: [(result: SearchResult, score: Double)] = []
         if let q = FuzzyMatcher.Query(query) {
             for (app, names) in zip(apps, candidates) {
                 if let match = Self.bestMatch(q, names) {
-                    let total = match.score + usage.boost(for: app.id, at: now)
-                    scored.append((SearchResult(app: app, matchedIndices: match.indices), Double(total)))
+                    let total = match.score + usageBoost(app.id)
+                    let result = SearchResult(app: app, matchedIndices: match.indices, match: match.tier.quality)
+                    scored.append((result, Double(total)))
                 }
             }
         } else {
             for app in apps {
-                let frecency = usage.frecency(for: app.id, at: now)
-                if frecency > 0 { scored.append((SearchResult(app: app), frecency)) }
+                let used = frecency(app.id)
+                if used > 0 { scored.append((SearchResult(app: app), used)) }
             }
         }
         return scored
@@ -70,13 +73,13 @@ final class SearchEngine {
     /// (the first candidate), so they're kept from its match even when an alternate scores higher.
     private static func bestMatch(_ q: FuzzyMatcher.Query, _ names: [FuzzyMatcher.Candidate]) -> FuzzyMatcher.Match? {
         let own = FuzzyMatcher.match(q, names[0])
-        var score = own?.score
+        var best = own.map { (score: $0.score, tier: $0.tier) }
         for name in names.dropFirst() {
-            if let match = FuzzyMatcher.match(q, name) {
-                score = max(score ?? .min, match.score - alternateNamePenalty)
+            if let match = FuzzyMatcher.match(q, name), match.score - alternateNamePenalty > best?.score ?? .min {
+                best = (match.score - alternateNamePenalty, match.tier)
             }
         }
-        return score.map { FuzzyMatcher.Match(score: $0, indices: own?.indices ?? []) }
+        return best.map { FuzzyMatcher.Match(score: $0.score, tier: $0.tier, indices: own?.indices ?? []) }
     }
 
     private static func details(for apps: [AppEntry]) -> [String: String] {

@@ -40,12 +40,14 @@ final class LauncherViewModel {
     var onDismiss: () -> Void = {}
     private let pluginsByID: [String: any LauncherPlugin]
     private let history: QueryHistory
+    private let usage: UsageStore
     private var historyCursor = HistoryCursor()
 
-    init(plugins: [any LauncherPlugin], history: QueryHistory) {
+    init(plugins: [any LauncherPlugin], history: QueryHistory, usage: UsageStore) {
         self.plugins = plugins
         enabledIDs = Set(plugins.map(\.id))
         self.history = history
+        self.usage = usage
         itemLimit = plugins.map(\.resultLimit).reduce(0, +)
         pluginsByID = Dictionary(uniqueKeysWithValues: plugins.map { ($0.id, $0) })
     }
@@ -138,6 +140,9 @@ final class LauncherViewModel {
     private func perform(actionAt index: Int) {
         guard let item = selectedItem, item.result.actions.indices.contains(index) else { return }
         let action = item.result.actions[index]
+        if openView == nil {
+            usage.increment(UsageStore.Key(pluginID: item.pluginID, itemID: item.result.id))
+        }
         if action.effect == .openView, let plugin = plugin(for: item) {
             history.record(query)
             historyCursor.reset()
@@ -156,10 +161,16 @@ final class LauncherViewModel {
         if let openView {
             return openView.viewResults(for: query).map { LauncherItem(pluginID: openView.id, result: $0) }
         }
-        return plugins.filter { enabledIDs.contains($0.id) }.flatMap { plugin in
+        let items = plugins.filter { enabledIDs.contains($0.id) }.flatMap { plugin in
             plugin.results(for: query).prefix(plugin.resultLimit).map {
                 LauncherItem(pluginID: plugin.id, result: $0)
             }
+        }
+        // With no query only recent rows show, already ordered by use.
+        guard !query.trimmingCharacters(in: .whitespaces).isEmpty else { return items }
+        let now = Date()
+        return ResultRanker.rank(items, match: \.result.match) {
+            usage.boost(for: UsageStore.Key(pluginID: $0.pluginID, itemID: $0.result.id), at: now)
         }
     }
 }

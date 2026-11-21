@@ -34,8 +34,8 @@ public protocol LauncherPlugin: AnyObject {
     /// has activated.
     func activate(_ context: PluginContext) async
     /// Rows for `query`, best first, at most `resultLimit`. Runs on every keystroke, on the
-    /// main actor, so it must be fast. Plugins are asked in registry order and their rows
-    /// shown in that order.
+    /// main actor, so it must be fast. The app ranks every plugin's rows together: by `match`,
+    /// then by how much the user picks each row, then registry order and the plugin's own.
     func results(for query: String) -> [ResultItem]
     /// Rows of the plugin's own view for `query`, best first, drawn as a list with the selected
     /// row's `preview` beside it. Like `results(for:)`, runs on every keystroke.
@@ -78,10 +78,53 @@ public struct PluginContext {
     /// Tells the app the plugin's results changed without the query changing (an index was
     /// rebuilt, say), so it searches again.
     public let resultsDidChange: () -> Void
+    /// Up to 60 points for a row the user picks often and lately, by the row's `id`; zero for
+    /// one never picked. For a plugin that ranks many rows itself, so the rows it keeps
+    /// within `resultLimit` include the ones the user reaches for.
+    public let usageBoost: (String) -> Int
+    /// Unbounded frecency of a row, by `id`, for ordering recently used rows; zero for one
+    /// never picked.
+    public let frecency: (String) -> Double
+    /// Hands the app usage the plugin recorded itself before the app kept it.
+    public let importUsage: ([UsageRecord]) -> Void
 
-    public init(resultsDidChange: @escaping () -> Void) {
+    public init(resultsDidChange: @escaping () -> Void = {},
+                usageBoost: @escaping (String) -> Int = { _ in 0 },
+                frecency: @escaping (String) -> Double = { _ in 0 },
+                importUsage: @escaping ([UsageRecord]) -> Void = { _ in }) {
         self.resultsDidChange = resultsDidChange
+        self.usageBoost = usageBoost
+        self.frecency = frecency
+        self.importUsage = importUsage
     }
+}
+
+/// How often and how recently the user picked one of a plugin's rows.
+public struct UsageRecord: Equatable, Sendable {
+    public var id: String
+    public var count: Int
+    public var lastUsed: Date
+
+    public init(id: String, count: Int, lastUsed: Date) {
+        self.id = id
+        self.count = count
+        self.lastUsed = lastUsed
+    }
+}
+
+/// How well a row matched the query, compared across plugins. Strongest last.
+public enum MatchQuality: Int, Comparable, Sendable {
+    /// The query's letters appear in order, with gaps.
+    case fuzzy
+    case substring
+    /// A word inside the title starts with the query.
+    case wordPrefix
+    /// The query spells the title's word initials.
+    case initials
+    case prefix
+    case exact
+
+    public static func < (lhs: Self, rhs: Self) -> Bool { lhs.rawValue < rhs.rawValue }
 }
 
 /// One row in the launcher.
@@ -97,20 +140,24 @@ public struct ResultItem: Hashable, Sendable {
     public var icon: ResultIcon
     /// The first runs on ↩ and the second on ⌘↩; the key hints show their titles.
     public var actions: [ResultAction]
+    /// How well the row matched; the app ranks rows from every plugin by it. Unused in a
+    /// plugin's view.
+    public var match: MatchQuality
     /// Shown beside the list while the row is selected in a plugin's view.
     public var preview: ResultPreview?
     /// Grey text below the preview, e.g. "142 characters · 3 min ago".
     public var previewDetail: String?
 
     public init(id: String, title: String, highlightedIndices: [Int] = [], detail: String? = nil,
-                icon: ResultIcon, actions: [ResultAction], preview: ResultPreview? = nil,
-                previewDetail: String? = nil) {
+                icon: ResultIcon, actions: [ResultAction], match: MatchQuality = .prefix,
+                preview: ResultPreview? = nil, previewDetail: String? = nil) {
         self.id = id
         self.title = title
         self.highlightedIndices = highlightedIndices
         self.detail = detail
         self.icon = icon
         self.actions = actions
+        self.match = match
         self.preview = preview
         self.previewDetail = previewDetail
     }

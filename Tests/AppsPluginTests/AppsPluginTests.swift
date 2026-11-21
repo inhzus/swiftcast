@@ -23,16 +23,27 @@ struct AppsPluginTests {
         )])
     }
 
-    @Test func openingCountsAsUsage() throws {
-        let url = URL(filePath: "/Applications/Safari.app")
-        let plugin = makePlugin([AppEntry(name: "Safari", bundleID: "com.apple.Safari", url: url)])
-        let item = try #require(plugin.results(for: "saf").first)
-        plugin.didPerform(item.actions[1], on: item)
-        #expect(plugin.engine.usage.count(for: item.id) == 0)
-        plugin.didPerform(item.actions[0], on: item)
-        #expect(plugin.engine.usage.count(for: item.id) == 1)
-        plugin.clearLaunchHistory()
-        #expect(plugin.engine.usage.count(for: item.id) == 0)
+    @Test func rowsUseTheAppsUsage() throws {
+        let plugin = makePlugin(["Mail", "Maps"].map {
+            AppEntry(name: $0, bundleID: nil, url: URL(filePath: "/Applications/\($0).app"))
+        })
+        let maps = try #require(plugin.engine.apps.first { $0.name == "Maps" })
+        plugin.engine.usageBoost = { $0 == maps.id ? 30 : 0 }
+        #expect(plugin.results(for: "ma").map(\.title) == ["Maps", "Mail"])
+        #expect(plugin.results(for: "ma").map(\.match) == [.prefix, .prefix])
+    }
+
+    @Test func handsOverOldLaunchesOnce() {
+        let database = Database.inMemory(migrations: AppsPlugin.migrations)
+        let lastUsed = Date(timeIntervalSince1970: 1_000_000)
+        database.execute("INSERT INTO launches (app_id, count, last_used) VALUES ('com.apple.Safari', 3, ?)",
+                         [.double(lastUsed.timeIntervalSince1970)])
+        let plugin = AppsPlugin(database: database)
+        var imported: [[UsageRecord]] = []
+        let context = PluginContext(importUsage: { imported.append($0) })
+        plugin.handOverLaunches(to: context)
+        plugin.handOverLaunches(to: context)
+        #expect(imported == [[UsageRecord(id: "com.apple.Safari", count: 3, lastUsed: lastUsed)]])
     }
 
     @Test func settingsListDefaultAndAddedFolders() throws {
@@ -47,21 +58,5 @@ struct AppsPluginTests {
         let reopened = AppsPlugin(database: try Database(url: url, migrations: AppsPlugin.migrations))
         #expect(reopened.settingsSections().first?.rows.first?.control == .folders(
             fixed: AppIndexer.defaultRoots, editable: [extra], addPrompt: "Choose folders to search for apps"))
-    }
-
-    @Test func clearingLaunchHistoryFromSettings() throws {
-        let url = URL(filePath: "/Applications/Safari.app")
-        let plugin = makePlugin([AppEntry(name: "Safari", bundleID: "com.apple.Safari", url: url)])
-        func clearEnabled() -> Bool? {
-            guard case .button(_, let enabled, _) = plugin.settingsSections().last?.rows.first?.control else { return nil }
-            return enabled
-        }
-        #expect(clearEnabled() == false)
-        let item = try #require(plugin.results(for: "saf").first)
-        plugin.didPerform(item.actions[0], on: item)
-        #expect(clearEnabled() == true)
-        plugin.performSettingsAction("clearLaunchHistory")
-        #expect(plugin.engine.usage.count(for: item.id) == 0)
-        #expect(clearEnabled() == false)
     }
 }

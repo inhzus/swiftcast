@@ -2,13 +2,10 @@ import Foundation
 import SwiftCastPluginKit
 
 /// Searches the user acted on (opened an app, revealed one, copied a result), newest first.
+/// Keeps them in the app's database (see `AppDatabase`).
 @MainActor
 public final class QueryHistory {
     public static let limit = 100
-    /// Schema of the database it's given; only ever append.
-    public static let migrations = [
-        "CREATE TABLE query_history (query TEXT PRIMARY KEY, last_used REAL NOT NULL)",
-    ]
 
     private let database: Database
     public private(set) var entries: [String]
