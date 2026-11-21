@@ -1,6 +1,6 @@
 import AppKit
 import Carbon.HIToolbox
-import SwiftCastCore
+import SwiftCastPluginKit
 
 extension Shortcut {
     /// Builds a shortcut from a key event, with its modifiers converted to Carbon's flags.

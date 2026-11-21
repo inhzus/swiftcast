@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import SwiftCastCore
+@testable import SwiftCastPluginKit
 
 struct ShortcutTests {
     @Test func needsACommandOptionOrControlModifier() {

@@ -1,6 +1,6 @@
 import Foundation
 import Observation
-import SwiftCastCore
+import SwiftCastPluginKit
 
 /// App-wide preferences (plugins keep their own), persisted in `UserDefaults`. Launch at
 /// login isn't here: it lives in `SMAppService`, which is the source of truth for it.
@@ -12,6 +12,12 @@ final class AppSettings {
     /// The global shortcut that toggles the launcher.
     var shortcut: Shortcut {
         didSet { save(shortcut, forKey: "hotKey") }
+    }
+
+    /// Global shortcuts that open plugins' views, by plugin ID, where the user changed them:
+    /// a missing ID uses the plugin's `defaultViewShortcut`, `nil` means turned off.
+    var viewShortcuts: [String: Shortcut?] {
+        didSet { save(viewShortcuts, forKey: "viewShortcuts") }
     }
 
     /// How long after closing the panel a reopen brings back the last search; 0 never does.
@@ -39,6 +45,8 @@ final class AppSettings {
         self.defaults = defaults
         shortcut = defaults.data(forKey: "hotKey")
             .flatMap { try? JSONDecoder().decode(Shortcut.self, from: $0) } ?? .default
+        viewShortcuts = defaults.data(forKey: "viewShortcuts")
+            .flatMap { try? JSONDecoder().decode([String: Shortcut?].self, from: $0) } ?? [:]
         restoreInterval = defaults.object(forKey: "restoreInterval") as? TimeInterval ?? 60
         disabledPlugins = Set(defaults.stringArray(forKey: "disabledPlugins") ?? [])
         launcherPlacement = defaults.data(forKey: "launcherPlacement")
@@ -47,6 +55,13 @@ final class AppSettings {
         for key in ["searchFolders", "launchHistory", "queryHistory"] {
             defaults.removeObject(forKey: key)
         }
+    }
+
+    /// The shortcut that opens `plugin`'s view, if it has a view and one is set.
+    func viewShortcut(for plugin: any LauncherPlugin) -> Shortcut? {
+        guard plugin.viewTitle != nil else { return nil }
+        if let chosen = viewShortcuts[plugin.id] { return chosen }
+        return plugin.defaultViewShortcut
     }
 
     private func save(_ value: some Encodable, forKey key: String) {

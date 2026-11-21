@@ -13,6 +13,9 @@ public final class ClipboardPlugin: LauncherPlugin {
     public let icon = ResultIcon.symbol("doc.on.clipboard")
     public let sectionTitle = "Clipboard"
     public let viewTitle: String? = "Clipboard History"
+    /// ⌃⌥⇧⌘C.
+    public let defaultViewShortcut: Shortcut? = Shortcut(
+        keyCode: 8, modifiers: Shortcut.control | Shortcut.option | Shortcut.shift | Shortcut.command)
     public let resultLimit = 1
 
     /// Longest row title; the preview shows the rest.
