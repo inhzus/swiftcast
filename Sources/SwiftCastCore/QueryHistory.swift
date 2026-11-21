@@ -1,17 +1,26 @@
 import Foundation
+import SwiftCastPluginKit
 
 /// Searches the user acted on (opened an app, revealed one, copied a result), newest first.
 @MainActor
 public final class QueryHistory {
     public static let limit = 100
+    /// Schema of the database it's given; only ever append.
+    public static let migrations = [
+        "CREATE TABLE query_history (query TEXT PRIMARY KEY, last_used REAL NOT NULL)",
+    ]
 
-    private let defaults: UserDefaults
-    private let key = "queryHistory"
+    private let database: Database
     public private(set) var entries: [String]
 
-    public init(defaults: UserDefaults = .standard) {
-        self.defaults = defaults
-        entries = defaults.stringArray(forKey: key) ?? []
+    public init(database: Database) {
+        self.database = database
+        // `INSERT OR REPLACE` gives a re-recorded query a new, higher rowid, which breaks ties
+        // between queries recorded within the clock's resolution.
+        entries = database.rows(
+            "SELECT query FROM query_history ORDER BY last_used DESC, rowid DESC LIMIT ?",
+            [.int(Int64(Self.limit))]
+        ).compactMap { $0[0].text }
     }
 
     /// Moves `query` to the front, dropping an earlier copy. Blank queries are ignored.
@@ -23,12 +32,20 @@ public final class QueryHistory {
         if entries.count > Self.limit {
             entries.removeLast(entries.count - Self.limit)
         }
-        defaults.set(entries, forKey: key)
+        database.transaction {
+            database.execute(
+                "INSERT OR REPLACE INTO query_history (query, last_used) VALUES (?, ?)",
+                [.text(query), .double(Date().timeIntervalSince1970)])
+            database.execute("""
+                DELETE FROM query_history WHERE rowid NOT IN
+                    (SELECT rowid FROM query_history ORDER BY last_used DESC, rowid DESC LIMIT ?)
+                """, [.int(Int64(Self.limit))])
+        }
     }
 
     public func clear() {
         entries = []
-        defaults.removeObject(forKey: key)
+        database.execute("DELETE FROM query_history")
     }
 }
 

@@ -36,6 +36,10 @@ final class AppSettings {
             .flatMap { try? JSONDecoder().decode(Shortcut.self, from: $0) } ?? .default
         restoreInterval = defaults.object(forKey: "restoreInterval") as? TimeInterval ?? 60
         disabledPlugins = Set(defaults.stringArray(forKey: "disabledPlugins") ?? [])
+        // Plugin data used to live in UserDefaults; it isn't migrated.
+        for key in ["searchFolders", "launchHistory", "queryHistory"] {
+            defaults.removeObject(forKey: key)
+        }
     }
 
     private func save(_ value: some Encodable, forKey key: String) {

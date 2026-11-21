@@ -1,12 +1,12 @@
 import Foundation
+import SwiftCastPluginKit
 import Testing
 @testable import AppsPlugin
 
 @MainActor
 struct SearchEngineTests {
     private func makeEngine(_ apps: [AppEntry]) -> SearchEngine {
-        let defaults = UserDefaults(suiteName: "SwiftCastTests-\(UUID().uuidString)")!
-        let engine = SearchEngine(usage: UsageStore(defaults: defaults))
+        let engine = SearchEngine(usage: UsageStore(database: .inMemory(migrations: AppsPlugin.migrations)))
         engine.update(apps: apps)
         return engine
     }
