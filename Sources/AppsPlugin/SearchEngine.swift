@@ -27,8 +27,7 @@ final class SearchEngine {
     private(set) var apps: [AppEntry] = []
     /// How much the user opens each app, by ID; the app supplies these (see `PluginContext`).
     var usageBoost: (String) -> Int = { _ in 0 }
-    /// Prepared match candidates, parallel to `apps`: the name first, then its pinyin reading
-    /// if it has one, then alternate names.
+    /// Prepared match candidates, parallel to `apps`: the name first, then its pinyin readings, then alternate names.
     private var candidates: [[FuzzyMatcher.Candidate]] = []
     /// Text that tells apart apps sharing a name, keyed by app ID.
     private var details: [String: String] = [:]
@@ -37,7 +36,7 @@ final class SearchEngine {
         self.apps = apps
         candidates = apps.map { app in
             [FuzzyMatcher.Candidate(app.name)]
-                + (app.pinyin.map { [FuzzyMatcher.Candidate($0)] } ?? [])
+                + app.pinyin.map { FuzzyMatcher.Candidate($0) }
                 + app.alternateNames.map { FuzzyMatcher.Candidate($0) }
         }
         details = Self.details(for: apps)
