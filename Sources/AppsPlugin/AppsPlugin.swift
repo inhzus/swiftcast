@@ -12,7 +12,6 @@ public final class AppsPlugin: LauncherPlugin {
     public let summary = "Finds and opens installed apps, ranking the ones you use most first."
     public let icon = ResultIcon.symbol("square.grid.2x2")
     public let sectionTitle = "Applications"
-    public let emptyQueryTitle: String? = "Recent"
     public let resultLimit = 20
 
     /// Rescans on panel open only when the last scan is older than this.
@@ -53,7 +52,6 @@ public final class AppsPlugin: LauncherPlugin {
     public func activate(_ context: PluginContext) async {
         self.context = context
         engine.usageBoost = context.usageBoost
-        engine.frecency = context.frecency
         handOverLaunches(to: context)
         await reindex()
     }

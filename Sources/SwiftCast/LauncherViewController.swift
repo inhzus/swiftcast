@@ -427,7 +427,7 @@ final class LauncherViewController: NSViewController, NSTextFieldDelegate {
         let label = if let view = model.openView {
             view.viewTitle ?? view.name
         } else {
-            (model.query.isEmpty ? plugin?.emptyQueryTitle : nil) ?? plugin?.sectionTitle ?? ""
+            plugin?.sectionTitle ?? ""
         }
         let actions = item.result.actions.prefix(Self.actionKeys.count).map(\.title)
         let footer = Footer(label: label, actions: actions, inView: model.openView != nil)

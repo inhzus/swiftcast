@@ -21,8 +21,6 @@ public protocol LauncherPlugin: AnyObject {
     var icon: ResultIcon { get }
     /// Heading above the selected row, e.g. "Applications".
     var sectionTitle: String { get }
-    /// Heading used instead of `sectionTitle` while the field is empty, e.g. "Recent".
-    var emptyQueryTitle: String? { get }
     /// Most rows `results(for:)` returns; the app sizes its row pool from these.
     var resultLimit: Int { get }
     /// Heading and search placeholder of the plugin's own view (see `Effect.openView`), e.g.
@@ -62,7 +60,6 @@ public protocol LauncherPlugin: AnyObject {
 }
 
 public extension LauncherPlugin {
-    var emptyQueryTitle: String? { nil }
     var viewTitle: String? { nil }
     var defaultViewShortcut: Shortcut? { nil }
     func activate(_ context: PluginContext) async {}
@@ -86,19 +83,14 @@ public struct PluginContext {
     /// one never picked. For a plugin that ranks many rows itself, so the rows it keeps
     /// within `resultLimit` include the ones the user reaches for.
     public let usageBoost: (String) -> Int
-    /// Unbounded frecency of a row, by `id`, for ordering recently used rows; zero for one
-    /// never picked.
-    public let frecency: (String) -> Double
     /// Hands the app usage the plugin recorded itself before the app kept it.
     public let importUsage: ([UsageRecord]) -> Void
 
     public init(resultsDidChange: @escaping () -> Void = {},
                 usageBoost: @escaping (String) -> Int = { _ in 0 },
-                frecency: @escaping (String) -> Double = { _ in 0 },
                 importUsage: @escaping ([UsageRecord]) -> Void = { _ in }) {
         self.resultsDidChange = resultsDidChange
         self.usageBoost = usageBoost
-        self.frecency = frecency
         self.importUsage = importUsage
     }
 }

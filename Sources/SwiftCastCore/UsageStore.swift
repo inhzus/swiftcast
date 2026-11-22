@@ -84,11 +84,4 @@ public final class UsageStore {
         let decay = pow(0.5, age / Self.halfLife)
         return min(Int(15 * log2(Double(record.count + 1)) * decay), Self.maxBoost)
     }
-
-    /// Unbounded frecency, for ordering recently used rows when there is no query.
-    public func frecency(for key: Key, at now: Date = Date()) -> Double {
-        guard let record = records[key] else { return 0 }
-        let age = max(now.timeIntervalSince(record.lastUsed), 0)
-        return log2(Double(record.count + 1)) * pow(0.5, age / Self.halfLife)
-    }
 }
