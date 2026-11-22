@@ -14,30 +14,79 @@ struct PinyinReading: Hashable, Sendable {
 }
 
 enum Pinyin {
-    /// The reading of `name`, or `nil` when it has no Han characters.
+    /// Which Chinese a name is written in, or `nil` when it shouldn't get pinyin.
+    enum Variant: Equatable {
+        case simplified
+        case traditional
+    }
+
+    /// How to read `name`. `language` is the localization the name came from, which the app
+    /// itself declares and so decides; without one the script decides: kana means Japanese
+    /// (no pinyin, since kanji read as Mandarin are wrong words), and Han text is Chinese.
+    static func variant(of name: String, language: String?) -> Variant? {
+        if let language {
+            let parsed = Locale.Language(identifier: language)
+            guard parsed.languageCode == .chinese else { return nil }
+            switch parsed.script?.identifier {
+            case "Hant": return .traditional
+            case "Hans": return .simplified
+            default:
+                let traditionalRegions: Set<String> = ["TW", "HK", "MO"]
+                return parsed.region.map { traditionalRegions.contains($0.identifier) } == true ? .traditional : .simplified
+            }
+        }
+        let scalars = name.unicodeScalars
+        guard name.contains(where: isHan) else { return nil }
+        if scalars.contains(where: { (0x3040...0x30FF).contains($0.value) || (0x31F0...0x31FF).contains($0.value) }) {
+            return nil
+        }
+        let best = CFStringTokenizerCopyBestStringLanguage(name as CFString, CFRangeMake(0, (name as NSString).length)) as String?
+        return best == "zh-Hant" ? .traditional : .simplified
+    }
+
+    /// Readings of `name` in pinyin, empty when it has no Han characters or isn't Chinese
+    /// (see `variant(of:language:)`).
     ///
-    /// Words are read by `CFStringTokenizer`, which reads polyphones in context (音乐 is
-    /// "yinyue", 银行 is "yinhang"); reading character by character gets them wrong.
-    static func reading(of name: String) -> PinyinReading? {
-        let original = Array(name)
+    /// The first reads words with `CFStringTokenizer`, which reads polyphones in context (音乐
+    /// is "yinyue", 银行 is "yinhang"). The second reads character by character and is kept
+    /// when it differs, so a word the tokenizer misreads can still be found. Traditional
+    /// characters are read as their simplified forms, which the tokenizer knows.
+    static func readings(of name: String, language: String? = nil) -> [PinyinReading] {
         // Format characters (BOM, bidi and zero-width marks) can end tokenizing early and would
         // throw off the character count a word's reading is split by.
         var cleaned: [Character] = []
-        var cleanedSources: [Int] = []
-        for (index, character) in original.enumerated() {
+        var sources: [Int] = []
+        for (index, character) in name.enumerated() {
             let scalars = character.unicodeScalars.filter { $0.properties.generalCategory != .format }
             guard !scalars.isEmpty else { continue }
             cleaned.append(Character(String(String.UnicodeScalarView(scalars))))
-            cleanedSources.append(index)
+            sources.append(index)
         }
-        guard cleaned.contains(where: isHan) else { return nil }
+        guard let variant = variant(of: String(cleaned), language: language) else { return [] }
+        if variant == .traditional,
+           let simplified = String(cleaned).applyingTransform(StringTransform("Hant-Hans"), reverse: false).map({ Array($0) }),
+           simplified.count == cleaned.count {
+            cleaned = simplified
+        }
 
+        var result: [PinyinReading] = []
+        for perCharacter in [false, true] {
+            if let reading = reading(of: cleaned, sources: sources, perCharacter: perCharacter),
+               !result.contains(where: { $0.text == reading.text }) {
+                result.append(reading)
+            }
+        }
+        return result
+    }
+
+    private static func reading(of cleaned: [Character], sources cleanedSources: [Int], perCharacter: Bool) -> PinyinReading? {
+        guard cleaned.contains(where: isHan) else { return nil }
         var builder = Builder()
         for segment in segments(of: cleaned) {
             let characters = Array(cleaned[segment.range])
             let sources = Array(cleanedSources[segment.range])
             if characters.allSatisfy(isHan) {
-                let syllables = segment.transcription
+                let syllables = (perCharacter ? nil : segment.transcription)
                     .flatMap { split(letters(of: $0), into: characters.count) }
                     ?? characters.map { letters(of: String($0).applyingTransform(.mandarinToLatin, reverse: false) ?? "") }
                 for (syllable, source) in zip(syllables, sources) {

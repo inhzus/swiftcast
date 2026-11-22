@@ -97,5 +97,21 @@ struct AppIndexerTests {
         #expect(entry.name == "MyCalc")
         #expect(entry.originalName == nil)
     }
+
+    @Test func readsPinyinInTheTranslationsLanguage() throws {
+        let app = try makeCalculator([
+            "ja.lproj/InfoPlist.strings": Data(#"CFBundleName = "計算機";"#.utf8),
+            "zh_TW.lproj/InfoPlist.strings": Data(#"CFBundleName = "音樂";"#.utf8),
+        ])
+        defer { try? FileManager.default.removeItem(at: app.deletingLastPathComponent()) }
+
+        let japanese = AppIndexer.entry(for: app, preferredLanguages: ["ja-JP"])
+        #expect(japanese.name == "計算機")
+        #expect(japanese.pinyin.isEmpty)
+
+        let traditional = AppIndexer.entry(for: app, preferredLanguages: ["zh-Hant-TW"])
+        #expect(traditional.name == "音樂")
+        #expect(traditional.pinyin.map(\.text).contains("yinyue"))
+    }
 }
 

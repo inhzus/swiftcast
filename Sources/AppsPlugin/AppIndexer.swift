@@ -89,15 +89,18 @@ struct AppIndexer: Sendable {
         // A file the user renamed keeps that name, as in Finder.
         let renamed = ![displayName, bundleName].contains { $0?.caseInsensitiveCompare(stem) == .orderedSame }
         let localized = renamed ? nil : bundle.flatMap { localizedName(bundle: $0, preferredLanguages: preferredLanguages) }
-        let name = localized ?? baseName
+        let name = localized?.name ?? baseName
+        let translated = name != baseName
         return AppEntry(
             name: name, bundleID: bundle?.bundleIdentifier, url: url,
-            alternateNames: alternates, originalName: name == baseName ? nil : baseName)
+            alternateNames: alternates, originalName: translated ? baseName : nil,
+            nameLanguage: translated ? localized?.language : nil)
     }
 
     /// The app's name in the first of `preferredLanguages` it's translated into, read from its
-    /// `InfoPlist.strings` or, for system apps, `InfoPlist.loctable`.
-    static func localizedName(bundle: Bundle, preferredLanguages: [String]) -> String? {
+    /// `InfoPlist.strings` or, for system apps, `InfoPlist.loctable`, with the localization it
+    /// came from (such as "zh_CN" or "ja").
+    static func localizedName(bundle: Bundle, preferredLanguages: [String]) -> (name: String, language: String)? {
         let resources = bundle.bundleURL.appending(path: "Contents/Resources")
         let loctable = (try? Data(contentsOf: resources.appending(path: "InfoPlist.loctable")))
             .flatMap { try? PropertyListSerialization.propertyList(from: $0, format: nil) as? [String: Any] }
@@ -109,7 +112,8 @@ struct AppIndexer: Sendable {
         let strings = (try? Data(contentsOf: stringsURL))
             .flatMap { try? PropertyListSerialization.propertyList(from: $0, format: nil) as? [String: Any] }
             ?? loctable?[localization] as? [String: Any]
-        return nonEmpty(strings?["CFBundleDisplayName"]) ?? nonEmpty(strings?["CFBundleName"])
+        guard let name = nonEmpty(strings?["CFBundleDisplayName"]) ?? nonEmpty(strings?["CFBundleName"]) else { return nil }
+        return (name, localization)
     }
 
     private static func nonEmpty(_ value: Any?) -> String? {
