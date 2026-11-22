@@ -181,7 +181,7 @@ final class LauncherViewModel {
                 LauncherItem(pluginID: plugin.id, result: $0)
             }
         }
-        // With no query only recent rows show, already ordered by use.
+        // With no query there's nothing to rank.
         guard !query.trimmingCharacters(in: .whitespaces).isEmpty else { return items }
         let now = Date()
         return ResultRanker.rank(items, match: \.result.match) {

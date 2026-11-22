@@ -283,7 +283,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         return PluginContext(
             resultsDidChange: { [weak self] in self?.pluginResultsChanged() },
             usageBoost: { [unowned self] in usage.boost(for: UsageStore.Key(pluginID: pluginID, itemID: $0)) },
-            frecency: { [unowned self] in usage.frecency(for: UsageStore.Key(pluginID: pluginID, itemID: $0)) },
             importUsage: { [unowned self] in usage.import($0, for: pluginID) })
     }
 

@@ -18,7 +18,7 @@ struct SearchResult: Hashable, Identifiable, Sendable {
     }
 }
 
-/// Ranks indexed apps against a query, combining match quality with frecency.
+/// Ranks indexed apps against a query, combining match quality with usage.
 @MainActor
 final class SearchEngine {
     /// Points an alternate-name match loses against the same kind of match on the app's name.
@@ -27,7 +27,6 @@ final class SearchEngine {
     private(set) var apps: [AppEntry] = []
     /// How much the user opens each app, by ID; the app supplies these (see `PluginContext`).
     var usageBoost: (String) -> Int = { _ in 0 }
-    var frecency: (String) -> Double = { _ in 0 }
     /// Prepared match candidates, parallel to `apps`: the name first, then alternate names.
     private var candidates: [[FuzzyMatcher.Candidate]] = []
     /// Text that tells apart apps sharing a name, keyed by app ID.
@@ -42,19 +41,12 @@ final class SearchEngine {
     }
 
     func results(for query: String, limit: Int = 20) -> [SearchResult] {
-        var scored: [(result: SearchResult, score: Double)] = []
-        if let q = FuzzyMatcher.Query(query) {
-            for (app, names) in zip(apps, candidates) {
-                if let match = Self.bestMatch(q, names) {
-                    let total = match.score + usageBoost(app.id)
-                    let result = SearchResult(app: app, matchedIndices: match.indices, match: match.tier.quality)
-                    scored.append((result, Double(total)))
-                }
-            }
-        } else {
-            for app in apps {
-                let used = frecency(app.id)
-                if used > 0 { scored.append((SearchResult(app: app), used)) }
+        guard let q = FuzzyMatcher.Query(query) else { return [] }
+        var scored: [(result: SearchResult, score: Int)] = []
+        for (app, names) in zip(apps, candidates) {
+            if let match = Self.bestMatch(q, names) {
+                let result = SearchResult(app: app, matchedIndices: match.indices, match: match.tier.quality)
+                scored.append((result, match.score + usageBoost(app.id)))
             }
         }
         return scored

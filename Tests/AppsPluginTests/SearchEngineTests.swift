@@ -61,14 +61,10 @@ struct SearchEngineTests {
         #expect(engine.results(for: "notes").first?.app.name == "Notes")
     }
 
-    @Test func emptyQueryShowsRecentlyUsed() {
+    @Test func emptyQueryShowsNothing() {
         let engine = makeEngine(["Mail", "Maps", "Notes"])
+        engine.usageBoost = { _ in 60 }
         #expect(engine.results(for: "").isEmpty)
-
-        let frecency = [engine.apps.first { $0.name == "Notes" }!.id: 1.0,
-                        engine.apps.first { $0.name == "Mail" }!.id: 0.2]
-        engine.frecency = { frecency[$0] ?? 0 }
-        #expect(engine.results(for: "").map(\.app.name) == ["Notes", "Mail"])
     }
 
     @Test func alternateNamesMatchWithASmallPenalty() {

@@ -149,7 +149,7 @@ struct SettingsView {
                         .disabled(state.usageCleared)
                 } label: {
                     Text("Usage")
-                    Text("Ranks the results you pick most, and lists recent apps.")
+                    Text("Ranks the results you pick most first.")
                 }
                 .alert("Clear usage?", isPresented: $state.confirmingClearUsage) {
                     Button("Clear", role: .destructive) {
@@ -157,7 +157,7 @@ struct SettingsView {
                         state.usageCleared = true
                     }
                 } message: {
-                    Text("Results go back to being ranked only by how well they match, and recent apps start over.")
+                    Text("Results go back to being ranked only by how well they match.")
                 }
             }
 
