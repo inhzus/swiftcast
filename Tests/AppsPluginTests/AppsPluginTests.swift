@@ -23,6 +23,16 @@ struct AppsPluginTests {
         )])
     }
 
+    @Test func showsTheOriginalNameBelowATranslatedOne() {
+        let url = URL(filePath: "/Applications/Calculator.app")
+        let app = AppEntry(name: "计算器", bundleID: nil, url: url, alternateNames: ["Calculator"], originalName: "Calculator")
+        let item = AppsPlugin.item(for: SearchResult(app: app), detail: "~/Apps")
+        #expect(item.subtitle == "Calculator")
+        #expect(item.detail == "~/Apps")
+        let plain = AppEntry(name: "Safari", bundleID: nil, url: url)
+        #expect(AppsPlugin.item(for: SearchResult(app: plain), detail: nil).subtitle == nil)
+    }
+
     @Test func rowsUseTheAppsUsage() throws {
         let plugin = makePlugin(["Mail", "Maps"].map {
             AppEntry(name: $0, bundleID: nil, url: URL(filePath: "/Applications/\($0).app"))

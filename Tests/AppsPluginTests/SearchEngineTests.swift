@@ -82,6 +82,30 @@ struct SearchEngineTests {
         #expect(alternateOnly.results(for: "elec").first?.matchedIndices == [])
     }
 
+    @Test func pinyinMatchesHighlightTheChineseName() {
+        let engine = makeEngine([
+            app("计算器", file: "Calculator", alternateNames: ["Calculator"]),
+            app("音乐", file: "Music", alternateNames: ["Music"]),
+        ])
+        for (query, indices) in [("jsq", [0, 1, 2]), ("jisuan", [0, 1]), ("jisuanqi", [0, 1, 2]), ("suanqi", [1, 2])] {
+            let result = engine.results(for: query).first
+            #expect(result?.app.name == "计算器", "\(query)")
+            #expect(result?.matchedIndices == indices, "\(query)")
+        }
+        #expect(engine.results(for: "yinyue").first?.app.name == "音乐")
+        #expect(engine.results(for: "calc").first?.matchedIndices == [])
+    }
+
+    @Test func pinyinIsNotPenalizedLikeAnAlternateName() {
+        // Both match "dit" as a prefix of a four-letter word; only the alternate name pays the
+        // penalty, so the app whose own name reads "ditu" comes first.
+        let engine = makeEngine([
+            app("Other", alternateNames: ["Ditz"]),
+            app("地图", file: "Maps"),
+        ])
+        #expect(engine.results(for: "dit").map(\.app.name) == ["地图", "Other"])
+    }
+
     @Test func detailsTellApartAppsSharingAName() {
         let engine = makeEngine([
             app("Siri", in: "/System/Applications"),

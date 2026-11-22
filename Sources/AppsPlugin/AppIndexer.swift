@@ -70,18 +70,51 @@ struct AppIndexer: Sendable {
         return entries
     }
 
-    static func entry(for url: URL) -> AppEntry {
-        var name = FileManager.default.displayName(atPath: url.path)
-        if name.hasSuffix(".app") {
-            name = String(name.dropLast(4))
+    /// Builds the entry for the app at `url`, named in the first of `preferredLanguages` the
+    /// app is translated into. The unlocalized names stay searchable.
+    static func entry(for url: URL, preferredLanguages: [String] = Locale.preferredLanguages) -> AppEntry {
+        // Localized for this process, which only speaks English, so this is the English name or
+        // the name the user gave the file.
+        var baseName = FileManager.default.displayName(atPath: url.path)
+        if baseName.hasSuffix(".app") {
+            baseName = String(baseName.dropLast(4))
         }
         let bundle = Bundle(url: url)
         let info = bundle?.infoDictionary
-        let alternates = [
-            info?["CFBundleDisplayName"] as? String,
-            info?["CFBundleName"] as? String,
-            url.deletingPathExtension().lastPathComponent,
-        ].compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
-        return AppEntry(name: name, bundleID: bundle?.bundleIdentifier, url: url, alternateNames: alternates)
+        let displayName = Self.nonEmpty(info?["CFBundleDisplayName"])
+        let bundleName = Self.nonEmpty(info?["CFBundleName"])
+        let stem = url.deletingPathExtension().lastPathComponent
+        let alternates = [displayName, bundleName, stem, baseName].compactMap { $0 }
+
+        // A file the user renamed keeps that name, as in Finder.
+        let renamed = ![displayName, bundleName].contains { $0?.caseInsensitiveCompare(stem) == .orderedSame }
+        let localized = renamed ? nil : bundle.flatMap { localizedName(bundle: $0, preferredLanguages: preferredLanguages) }
+        let name = localized ?? baseName
+        return AppEntry(
+            name: name, bundleID: bundle?.bundleIdentifier, url: url,
+            alternateNames: alternates, originalName: name == baseName ? nil : baseName)
+    }
+
+    /// The app's name in the first of `preferredLanguages` it's translated into, read from its
+    /// `InfoPlist.strings` or, for system apps, `InfoPlist.loctable`.
+    static func localizedName(bundle: Bundle, preferredLanguages: [String]) -> String? {
+        let resources = bundle.bundleURL.appending(path: "Contents/Resources")
+        let loctable = (try? Data(contentsOf: resources.appending(path: "InfoPlist.loctable")))
+            .flatMap { try? PropertyListSerialization.propertyList(from: $0, format: nil) as? [String: Any] }
+        let available = Array(Set(bundle.localizations + (loctable?.keys.filter { $0 != "LocProvenance" } ?? [])))
+        guard let localization = Bundle.preferredLocalizations(from: available, forPreferences: preferredLanguages).first
+        else { return nil }
+
+        let stringsURL = resources.appending(path: "\(localization).lproj/InfoPlist.strings")
+        let strings = (try? Data(contentsOf: stringsURL))
+            .flatMap { try? PropertyListSerialization.propertyList(from: $0, format: nil) as? [String: Any] }
+            ?? loctable?[localization] as? [String: Any]
+        return nonEmpty(strings?["CFBundleDisplayName"]) ?? nonEmpty(strings?["CFBundleName"])
+    }
+
+    private static func nonEmpty(_ value: Any?) -> String? {
+        guard let text = (value as? String)?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty
+        else { return nil }
+        return text
     }
 }
