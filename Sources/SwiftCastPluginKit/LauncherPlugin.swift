@@ -133,6 +133,8 @@ public struct ResultItem: Hashable, Sendable {
     public var highlightedIndices: [Int]
     /// Grey text after the title.
     public var detail: String?
+    /// Grey text on a second line below the title.
+    public var subtitle: String?
     public var icon: ResultIcon
     /// The first runs on ↩ and the second on ⌘↩; the key hints show their titles.
     public var actions: [ResultAction]
@@ -145,12 +147,13 @@ public struct ResultItem: Hashable, Sendable {
     public var previewDetail: String?
 
     public init(id: String, title: String, highlightedIndices: [Int] = [], detail: String? = nil,
-                icon: ResultIcon, actions: [ResultAction], match: MatchQuality = .prefix,
+                subtitle: String? = nil, icon: ResultIcon, actions: [ResultAction], match: MatchQuality = .prefix,
                 preview: ResultPreview? = nil, previewDetail: String? = nil) {
         self.id = id
         self.title = title
         self.highlightedIndices = highlightedIndices
         self.detail = detail
+        self.subtitle = subtitle
         self.icon = icon
         self.actions = actions
         self.match = match

@@ -159,7 +159,8 @@ final class ResultsListView: NSView {
 }
 
 /// Icon and title, with the highlighted characters (such as the letters that matched the
-/// query) in bold, plus grey detail text and, at the trailing edge, a shortcut. Laid out with
+/// query) in bold, plus grey detail text, an optional grey subtitle line below the title and,
+/// at the trailing edge, a shortcut. Laid out with
 /// frames, which is cheaper than constraints for a view this simple.
 private final class ResultRowView: NSView {
     private static let nameFont = NSFont.systemFont(ofSize: 14)
@@ -170,6 +171,7 @@ private final class ResultRowView: NSView {
     private let icon = NSImageView()
     private let nameLabel = NSTextField(labelWithString: "")
     private let detailLabel = NSTextField(labelWithString: "")
+    private let subtitleLabel = NSTextField(labelWithString: "")
     private let shortcutLabel = NSTextField(labelWithString: "")
     private var row: ResultsListView.Row?
 
@@ -179,10 +181,13 @@ private final class ResultRowView: NSView {
         detailLabel.font = .systemFont(ofSize: 12)
         detailLabel.textColor = .tertiaryLabelColor
         detailLabel.lineBreakMode = .byTruncatingMiddle
+        subtitleLabel.font = .systemFont(ofSize: 11)
+        subtitleLabel.textColor = .secondaryLabelColor
+        subtitleLabel.lineBreakMode = .byTruncatingTail
         shortcutLabel.font = .systemFont(ofSize: 12)
         shortcutLabel.textColor = .secondaryLabelColor
         shortcutLabel.alignment = .right
-        for view in [icon, nameLabel, detailLabel, shortcutLabel] { addSubview(view) }
+        for view in [icon, nameLabel, detailLabel, subtitleLabel, shortcutLabel] { addSubview(view) }
     }
 
     required init?(coder: NSCoder) {
@@ -199,6 +204,8 @@ private final class ResultRowView: NSView {
         nameLabel.attributedStringValue = Self.name(item.title, bolding: item.highlightedIndices)
         detailLabel.stringValue = item.detail ?? ""
         detailLabel.isHidden = item.detail == nil
+        subtitleLabel.stringValue = item.subtitle ?? ""
+        subtitleLabel.isHidden = item.subtitle == nil
         shortcutLabel.stringValue = row.shortcut ?? ""
         shortcutLabel.isHidden = row.shortcut == nil
         needsLayout = true
@@ -241,10 +248,12 @@ private final class ResultRowView: NSView {
         super.layout()
         let textX: CGFloat = 54
         var maxX = bounds.width - 12
-        let y = (bounds.height - 18) / 2
+        let centerY = (bounds.height - 18) / 2
+        // With a subtitle, the title line moves up and the subtitle sits below it.
+        let y = subtitleLabel.isHidden ? centerY : centerY + 8
         if !shortcutLabel.isHidden {
             let width = ceil(shortcutLabel.intrinsicContentSize.width) + 4
-            shortcutLabel.frame = NSRect(x: maxX - width, y: y, width: width, height: 17)
+            shortcutLabel.frame = NSRect(x: maxX - width, y: centerY, width: width, height: 17)
             maxX -= width + 12
         }
         icon.frame = NSRect(x: 10, y: (bounds.height - 32) / 2, width: 32, height: 32)
@@ -255,6 +264,9 @@ private final class ResultRowView: NSView {
             detailLabel.frame = NSRect(x: detailX, y: y, width: max(maxX - detailX, 0), height: 17)
         }
         nameLabel.frame = NSRect(x: textX, y: y, width: nameWidth, height: 18)
+        if !subtitleLabel.isHidden {
+            subtitleLabel.frame = NSRect(x: textX, y: y - 16, width: max(maxX - textX, 0), height: 14)
+        }
     }
 }
 
