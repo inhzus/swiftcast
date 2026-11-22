@@ -109,6 +109,7 @@ public final class AppsPlugin: LauncherPlugin {
             title: app.name,
             highlightedIndices: result.matchedIndices,
             detail: detail,
+            subtitle: app.originalName,
             icon: .file(app.url.path),
             actions: [
                 ResultAction("Open", .openApplication(app.url)),

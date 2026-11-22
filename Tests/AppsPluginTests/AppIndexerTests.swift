@@ -41,4 +41,61 @@ struct AppIndexerTests {
         let apps = AppIndexer(roots: [URL(filePath: "/nonexistent-\(UUID().uuidString)")], extraApps: []).scan()
         #expect(apps.isEmpty)
     }
+
+    /// A bundle named `file` whose Info.plist calls it Calculator, with `files` (relative to
+    /// Contents/Resources) holding its translations.
+    private func makeCalculator(file: String = "Calculator.app", _ files: [String: Data] = [:]) throws -> URL {
+        let root = try makeTree([])
+        let app = root.appending(path: file)
+        let resources = app.appending(path: "Contents/Resources")
+        try FileManager.default.createDirectory(at: resources, withIntermediateDirectories: true)
+        let info: [String: Any] = ["CFBundleName": "Calculator", "CFBundleIdentifier": "test.\(UUID().uuidString)"]
+        try PropertyListSerialization.data(fromPropertyList: info, format: .xml, options: 0)
+            .write(to: app.appending(path: "Contents/Info.plist"))
+        for (path, data) in files {
+            let url = resources.appending(path: path)
+            try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try data.write(to: url)
+        }
+        return app
+    }
+
+    private let chineseStrings = Data(#"CFBundleName = "计算器";"#.utf8)
+
+    @Test func namesAppsInThePreferredLanguage() throws {
+        let app = try makeCalculator([
+            "zh-Hans.lproj/InfoPlist.strings": chineseStrings,
+            "en.lproj/InfoPlist.strings": Data(#"CFBundleName = "Calculator";"#.utf8),
+        ])
+        defer { try? FileManager.default.removeItem(at: app.deletingLastPathComponent()) }
+
+        let chinese = AppIndexer.entry(for: app, preferredLanguages: ["zh-Hans-SG", "en-US"])
+        #expect(chinese.name == "计算器")
+        #expect(chinese.originalName == "Calculator")
+        #expect(chinese.alternateNames.contains("Calculator"))
+
+        let english = AppIndexer.entry(for: app, preferredLanguages: ["en-US"])
+        #expect(english.name == "Calculator")
+        #expect(english.originalName == nil)
+    }
+
+    @Test func readsSystemAppLoctables() throws {
+        let table: [String: Any] = ["zh_CN": ["CFBundleDisplayName": "计算器"], "en": ["CFBundleName": "Calculator"]]
+        let app = try makeCalculator([
+            "InfoPlist.loctable": try PropertyListSerialization.data(fromPropertyList: table, format: .binary, options: 0),
+        ])
+        defer { try? FileManager.default.removeItem(at: app.deletingLastPathComponent()) }
+
+        #expect(AppIndexer.entry(for: app, preferredLanguages: ["zh-Hans"]).name == "计算器")
+    }
+
+    @Test func keepsNamesTheUserGave() throws {
+        let app = try makeCalculator(file: "MyCalc.app", ["zh-Hans.lproj/InfoPlist.strings": chineseStrings])
+        defer { try? FileManager.default.removeItem(at: app.deletingLastPathComponent()) }
+
+        let entry = AppIndexer.entry(for: app, preferredLanguages: ["zh-Hans"])
+        #expect(entry.name == "MyCalc")
+        #expect(entry.originalName == nil)
+    }
 }
+

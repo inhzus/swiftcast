@@ -34,15 +34,25 @@ enum FuzzyMatcher {
         let wordStarts: [Int]
         let wordStartSet: Set<Int>
         let initials: [Character]
+        /// For a reading of another name (pinyin), the offset in that name each character came
+        /// from; `nil` for a name matched as written.
+        let sources: [Int]?
 
         init(_ name: String) {
             let original = Array(name)
-            let chars = original.map { FuzzyMatcher.fold($0) }
-            let starts = FuzzyMatcher.wordStarts(original)
+            self.init(chars: original.map { FuzzyMatcher.fold($0) }, wordStarts: FuzzyMatcher.wordStarts(original), sources: nil)
+        }
+
+        init(_ reading: PinyinReading) {
+            self.init(chars: Array(reading.text), wordStarts: reading.wordStarts, sources: reading.sources)
+        }
+
+        private init(chars: [Character], wordStarts starts: [Int], sources: [Int]?) {
             self.chars = chars
             wordStarts = starts
             wordStartSet = Set(starts)
             initials = starts.map { chars[$0] }
+            self.sources = sources
         }
     }
 
