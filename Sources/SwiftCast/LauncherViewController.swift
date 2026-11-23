@@ -1,4 +1,5 @@
 import AppKit
+import SwiftCastCore
 import SwiftCastPluginKit
 
 /// The launcher's content, Spotlight-style: a glass search capsule, and below it a glass card

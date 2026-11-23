@@ -9,7 +9,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private let database = Database.open("swiftcast", migrations: AppDatabase.migrations)
     private lazy var queryHistory = QueryHistory(database: database)
     private lazy var usage = UsageStore(database: database)
-    private lazy var model = LauncherViewModel(plugins: plugins, history: queryHistory, usage: usage)
+    private lazy var model: LauncherViewModel = {
+        let model = LauncherViewModel(plugins: plugins, history: queryHistory, usage: usage, effects: EffectRunner())
+        model.measure = { name, body in PerfLog.measure(name, body) }
+        return model
+    }()
     private lazy var launcher = LauncherViewController(model: model)
     private lazy var settingsWindow = SettingsWindowController { [unowned self] in
         SettingsView(settings: settings, plugins: plugins, actions: SettingsActions(
