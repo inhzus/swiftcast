@@ -147,11 +147,17 @@ public final class ClipboardPlugin: LauncherPlugin {
         case .text(let text):
             add(.text(text))
         case .image(let data, let type):
+            // Converting, hashing and saving an image can take a while for a big one.
+            let directory = store.imageDirectory
             Task {
-                let png = await Task.detached(priority: .utility) {
+                let prepared = await Task.detached(priority: .utility) {
                     ClipboardMonitor.png(from: data, type: type)
+                        .flatMap { ClipboardStore.prepare(.image($0), imageDirectory: directory) }
                 }.value
-                if let png { add(.image(png)) }
+                if let prepared {
+                    store.add(prepared)
+                    context?.resultsDidChange()
+                }
             }
         }
     }
