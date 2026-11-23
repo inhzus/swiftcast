@@ -67,6 +67,38 @@ struct ClipboardStoreTests {
         #expect(texts(reopened) == ["c", "b"])
     }
 
+    @Test func prepareSavesAndMeasuresTheImage() throws {
+        let prepared = try #require(ClipboardStore.prepare(.image(Self.png(width: 4, height: 5)), imageDirectory: images))
+        guard case .image(let file, let width, let height) = prepared.content else {
+            Issue.record("not an image")
+            return
+        }
+        #expect(width == 4 && height == 5)
+        #expect(imageFiles() == [file])
+        #expect(file == "\(prepared.hash).png")
+    }
+
+    @Test func theSameImageTwiceKeepsOneFileAndEntry() throws {
+        let store = store()
+        let png = Self.png(width: 2, height: 2)
+        let first = try #require(ClipboardStore.prepare(.image(png), imageDirectory: images))
+        store.add(first, at: now)
+        store.add(.text("between"), at: now.addingTimeInterval(1))
+        let again = try #require(ClipboardStore.prepare(.image(png), imageDirectory: images))
+        store.add(again, at: now.addingTimeInterval(2))
+        #expect(store.entries.count == 2)
+        #expect(store.entries[0].hash == first.hash)
+        #expect(imageFiles().count == 1)
+    }
+
+    @Test func anImageWhoseFileWasClearedMeanwhileIsDropped() throws {
+        let store = store()
+        let prepared = try #require(ClipboardStore.prepare(.image(Self.png(width: 1, height: 1)), imageDirectory: images))
+        try FileManager.default.removeItem(at: images)
+        store.add(prepared, at: now)
+        #expect(store.entries.isEmpty)
+    }
+
     @Test func clearDeletesEverything() {
         let store = store()
         store.add(.text("a"), at: now)
