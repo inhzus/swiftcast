@@ -14,6 +14,16 @@ extension Shortcut {
         self.init(keyCode: Int(event.keyCode), modifiers: modifiers)
     }
 
+    /// Its modifiers as AppKit flags, e.g. for a menu item's key equivalent.
+    var modifierFlags: NSEvent.ModifierFlags {
+        var flags: NSEvent.ModifierFlags = []
+        if modifiers & Self.command != 0 { flags.insert(.command) }
+        if modifiers & Self.option != 0 { flags.insert(.option) }
+        if modifiers & Self.control != 0 { flags.insert(.control) }
+        if modifiers & Self.shift != 0 { flags.insert(.shift) }
+        return flags
+    }
+
     /// How macOS menus show it, e.g. "⌥⌘Space".
     var displayString: String {
         var text = ""

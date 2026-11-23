@@ -11,12 +11,14 @@ struct LauncherViewModelTests {
     let effects = RecordingEffects()
     let history: QueryHistory
     let usage: UsageStore
+    let host: PluginHost
     let model: LauncherViewModel
 
     init() {
         history = QueryHistory(database: database)
         usage = UsageStore(database: database)
-        model = LauncherViewModel(plugins: [first, second], history: history, usage: usage, effects: effects)
+        host = PluginHost(plugins: [first, second], usage: usage)
+        model = LauncherViewModel(host: host, history: history, usage: usage, effects: effects)
     }
 
     private var shownIDs: [String] { model.items.map(\.result.id) }
@@ -27,7 +29,7 @@ struct LauncherViewModelTests {
         model.query = "q"
         #expect(shownIDs == ["a", "b", "x"])
 
-        model.enabledIDs = ["second"]
+        host.setDisabled(["first"])
         model.refresh()
         #expect(shownIDs == ["x"])
     }

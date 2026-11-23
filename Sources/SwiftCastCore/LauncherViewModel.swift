@@ -20,10 +20,8 @@ public protocol EffectPerforming {
 
 @MainActor
 public final class LauncherViewModel {
-    /// Every plugin, enabled or not.
-    public let plugins: [any LauncherPlugin]
-    /// Plugins asked for results; the rest are turned off in Settings.
-    public var enabledIDs: Set<String>
+    /// The plugins; only enabled ones are asked for results.
+    public let host: PluginHost
     /// Most rows shown: every plugin's limit added up, so turning plugins on never needs
     /// more rows.
     public let itemLimit: Int
@@ -54,21 +52,17 @@ public final class LauncherViewModel {
     /// Times a named phase of a search, for the app's latency log.
     public var measure: (String, () -> Void) -> Void = { $1() }
 
-    private let pluginsByID: [String: any LauncherPlugin]
     private let history: QueryHistory
     private let usage: UsageStore
     private let effects: any EffectPerforming
     private var historyCursor = HistoryCursor()
 
-    public init(plugins: [any LauncherPlugin], history: QueryHistory, usage: UsageStore,
-                effects: any EffectPerforming) {
-        self.plugins = plugins
-        enabledIDs = Set(plugins.map(\.id))
+    public init(host: PluginHost, history: QueryHistory, usage: UsageStore, effects: any EffectPerforming) {
+        self.host = host
         self.history = history
         self.usage = usage
         self.effects = effects
-        itemLimit = plugins.map(\.resultLimit).reduce(0, +)
-        pluginsByID = Dictionary(uniqueKeysWithValues: plugins.map { ($0.id, $0) })
+        itemLimit = host.plugins.map(\.resultLimit).reduce(0, +)
     }
 
     /// The user typed: any history browsing ends, so ↑/↓ move through results again.
@@ -157,7 +151,7 @@ public final class LauncherViewModel {
 
     /// The plugin that `item` came from.
     public func plugin(for item: LauncherItem) -> (any LauncherPlugin)? {
-        pluginsByID[item.pluginID]
+        host.plugin(id: item.pluginID)
     }
 
     /// ↩: runs the selected row's first action.
@@ -193,7 +187,7 @@ public final class LauncherViewModel {
         if let openView {
             return openView.viewResults(for: query).map { LauncherItem(pluginID: openView.id, result: $0) }
         }
-        let items = plugins.filter { enabledIDs.contains($0.id) }.flatMap { plugin in
+        let items = host.enabledPlugins.flatMap { plugin in
             plugin.results(for: query).prefix(plugin.resultLimit).map {
                 LauncherItem(pluginID: plugin.id, result: $0)
             }
