@@ -1,12 +1,12 @@
 import Foundation
-import SwiftCastPluginKit
 
 /// Scores how well a query matches a candidate name. Higher is better; `nil` means no match.
+/// Shared by plugins, so their rows report `MatchQuality` and highlights the same way.
 ///
 /// Matches fall into tiers (exact > prefix > initials > word prefix > substring > subsequence).
 /// Within a tier, shorter candidates score slightly higher.
-enum FuzzyMatcher {
-    enum Tier: Int {
+public enum FuzzyMatcher {
+    public enum Tier: Int, Sendable {
         case subsequence = 100
         case substring = 600
         case wordPrefix = 700
@@ -15,7 +15,7 @@ enum FuzzyMatcher {
         case exact = 1000
 
         /// The same kind of match, in the terms the app ranks every plugin's rows by.
-        var quality: MatchQuality {
+        public var quality: MatchQuality {
             switch self {
             case .subsequence: .fuzzy
             case .substring: .substring
@@ -29,25 +29,22 @@ enum FuzzyMatcher {
 
     /// A candidate name prepared once (folded characters, word starts) so it can be scored
     /// against many queries cheaply.
-    struct Candidate: Sendable {
-        let chars: [Character]
-        let wordStarts: [Int]
+    public struct Candidate: Sendable {
+        public let chars: [Character]
+        public let wordStarts: [Int]
         let wordStartSet: Set<Int>
         let initials: [Character]
         /// For a reading of another name (pinyin), the offset in that name each character came
         /// from; `nil` for a name matched as written.
-        let sources: [Int]?
+        public let sources: [Int]?
 
-        init(_ name: String) {
+        public init(_ name: String) {
             let original = Array(name)
-            self.init(chars: original.map { FuzzyMatcher.fold($0) }, wordStarts: FuzzyMatcher.wordStarts(original), sources: nil)
+            self.init(folded: original.map { FuzzyMatcher.fold($0) }, wordStarts: FuzzyMatcher.wordStarts(original), sources: nil)
         }
 
-        init(_ reading: PinyinReading) {
-            self.init(chars: Array(reading.text), wordStarts: reading.wordStarts, sources: reading.sources)
-        }
-
-        private init(chars: [Character], wordStarts starts: [Int], sources: [Int]?) {
+        /// A candidate from text that's already folded, such as a reading of another name.
+        public init(folded chars: [Character], wordStarts starts: [Int], sources: [Int]?) {
             self.chars = chars
             wordStarts = starts
             wordStartSet = Set(starts)
@@ -57,10 +54,10 @@ enum FuzzyMatcher {
     }
 
     /// A query normalized once; `nil` when the query is blank.
-    struct Query: Sendable {
-        let chars: [Character]
+    public struct Query: Sendable {
+        public let chars: [Character]
 
-        init?(_ query: String) {
+        public init?(_ query: String) {
             chars = Array(FuzzyMatcher.normalize(query.trimmingCharacters(in: .whitespaces)))
             if chars.isEmpty { return nil }
         }
@@ -68,26 +65,32 @@ enum FuzzyMatcher {
 
     /// A successful match: its score, its kind and the matched character positions in the
     /// candidate.
-    struct Match: Equatable, Sendable {
-        let score: Int
-        let tier: Tier
-        let indices: [Int]
+    public struct Match: Equatable, Sendable {
+        public let score: Int
+        public let tier: Tier
+        public let indices: [Int]
+
+        public init(score: Int, tier: Tier, indices: [Int]) {
+            self.score = score
+            self.tier = tier
+            self.indices = indices
+        }
     }
 
-    static func score(query: String, candidate: String) -> Int? {
+    public static func score(query: String, candidate: String) -> Int? {
         match(query: query, candidate: candidate)?.score
     }
 
-    static func match(query: String, candidate: String) -> Match? {
+    public static func match(query: String, candidate: String) -> Match? {
         guard let q = Query(query) else { return nil }
         return match(q, Candidate(candidate))
     }
 
-    static func score(_ query: Query, _ candidate: Candidate) -> Int? {
+    public static func score(_ query: Query, _ candidate: Candidate) -> Int? {
         match(query, candidate)?.score
     }
 
-    static func match(_ query: Query, _ candidate: Candidate) -> Match? {
+    public static func match(_ query: Query, _ candidate: Candidate) -> Match? {
         let q = query.chars
         let c = candidate.chars
         guard q.count <= c.count else { return nil }
@@ -118,17 +121,17 @@ enum FuzzyMatcher {
 
     // MARK: - Helpers
 
-    static func fold(_ ch: Character) -> Character {
+    public static func fold(_ ch: Character) -> Character {
         normalize(String(ch)).first ?? ch
     }
 
-    static func normalize(_ s: String) -> String {
+    public static func normalize(_ s: String) -> String {
         s.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil).lowercased()
     }
 
     /// Indices where a word begins: the first character, a letter or digit after a separator,
     /// an uppercase letter after a lowercase one (camelCase), and a digit after a letter.
-    static func wordStarts(_ chars: [Character]) -> [Int] {
+    public static func wordStarts(_ chars: [Character]) -> [Int] {
         var result: [Int] = []
         for i in chars.indices {
             let ch = chars[i]

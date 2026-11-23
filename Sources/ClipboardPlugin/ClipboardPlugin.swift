@@ -58,31 +58,20 @@ public final class ClipboardPlugin: LauncherPlugin {
 
     // MARK: - Results
 
-    /// The row that opens the history, for a query that starts "clipboard history" or
-    /// "history".
+    /// The row that opens the history, for a query that starts "Clipboard History", one of its
+    /// words, or spells its initials.
     public func results(for query: String) -> [ResultItem] {
-        let query = query.trimmingCharacters(in: .whitespaces).lowercased()
-        guard !query.isEmpty else { return [] }
         let title = "Clipboard History"
-        let matched: Range<Int>
-        let match: MatchQuality
-        if title.lowercased().hasPrefix(query) {
-            matched = 0..<query.count
-            match = query.count == title.count ? .exact : .prefix
-        } else if "history".hasPrefix(query) {
-            matched = 10..<(10 + query.count)
-            match = .wordPrefix
-        } else {
-            return []
-        }
+        guard let match = FuzzyMatcher.match(query: query, candidate: title),
+              match.tier.quality >= .wordPrefix else { return [] }
         return [ResultItem(
             id: "history",
             title: title,
-            highlightedIndices: Array(matched),
+            highlightedIndices: match.indices,
             detail: itemCount,
             icon: icon,
             actions: [ResultAction("Open", .openView)],
-            match: match
+            match: match.tier.quality
         )]
     }
 
