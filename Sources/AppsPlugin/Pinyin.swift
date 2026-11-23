@@ -1,4 +1,5 @@
 import Foundation
+import SwiftCastPluginKit
 
 /// A name written in pinyin so it can be typed: 计算器 reads "jisuanqi", with a word start at
 /// each syllable so "jsq" matches as initials. Letters and digits outside Han text are kept
@@ -11,6 +12,12 @@ struct PinyinReading: Hashable, Sendable {
     /// For each Character of `text`, the offset of the Character in the original name it
     /// came from, so a match can be highlighted on the name itself.
     let sources: [Int]
+}
+
+extension FuzzyMatcher.Candidate {
+    init(_ reading: PinyinReading) {
+        self.init(folded: Array(reading.text), wordStarts: reading.wordStarts, sources: reading.sources)
+    }
 }
 
 enum Pinyin {

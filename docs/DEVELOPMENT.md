@@ -22,12 +22,12 @@ Every feature is a plugin, a SwiftPM target with a clear border:
 
 | Target | What it is | May depend on |
 | --- | --- | --- |
-| `SwiftCastPluginKit` | The plugin contract (`LauncherPlugin`, `ResultItem`, `Effect`), settings descriptions, `Shortcut`, the SQLite `Database` helper | system frameworks |
-| `AppsPlugin` | App search: indexing, fuzzy matching, search folders | `SwiftCastPluginKit` |
+| `SwiftCastPluginKit` | The plugin contract (`LauncherPlugin`, `ResultItem`, `Effect`), settings descriptions, `Shortcut`, the SQLite `Database` helper, the shared `FuzzyMatcher` | system frameworks |
+| `AppsPlugin` | App search: indexing, pinyin, search folders | `SwiftCastPluginKit` |
 | `CalculatorPlugin` | Quick math | `SwiftCastPluginKit` |
 | `ClipboardPlugin` | Clipboard history: pasteboard monitor, store, its own view | `SwiftCastPluginKit` |
-| `SwiftCastCore` | Host logic: search history, usage, ranking across plugins | `SwiftCastPluginKit` |
-| `SwiftCast` | The AppKit app: panel, hotkeys, settings window | all of the above |
+| `SwiftCastCore` | Host logic without UI: the launcher view model, `PluginHost` (which plugins are on, their lifecycle), shortcut rules, search history, usage, ranking across plugins | `SwiftCastPluginKit` |
+| `SwiftCast` | The AppKit app: panel (`PanelController`), hotkeys (`HotKeyController`), settings window, carrying out effects | all of the above |
 
 Plugins return rows and their actions as values; the app draws the rows and carries out the
 actions (open, reveal, copy, open the plugin's view), so plugins never touch the panel. A

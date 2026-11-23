@@ -141,7 +141,9 @@ struct ClipboardPluginTests {
         #expect(plugin.results(for: "cli").first?.match == .prefix)
         #expect(plugin.results(for: "clipboard history").first?.match == .exact)
         #expect(plugin.results(for: "hist").first?.match == .wordPrefix)
-        for query in ["", "xyz", "board"] {
+        #expect(plugin.results(for: "ch").first?.match == .initials)
+        #expect(plugin.results(for: "ch").first?.highlightedIndices == [0, 10])
+        for query in ["", "xyz", "board", "cpy"] {
             #expect(plugin.results(for: query).isEmpty, "\(query)")
         }
     }
