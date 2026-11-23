@@ -32,8 +32,8 @@ public final class UsageStore {
     public init(database: Database) {
         self.database = database
         for row in database.rows("SELECT plugin_id, item_id, count, last_used FROM usage") {
-            guard let plugin = row[0].text, let item = row[1].text, let count = row[2].int,
-                  let lastUsed = row[3].double else { continue }
+            guard let plugin = row["plugin_id"].text, let item = row["item_id"].text, let count = row["count"].int,
+                  let lastUsed = row["last_used"].double else { continue }
             records[Key(pluginID: plugin, itemID: item)] =
                 Record(count: Int(count), lastUsed: Date(timeIntervalSince1970: lastUsed))
         }

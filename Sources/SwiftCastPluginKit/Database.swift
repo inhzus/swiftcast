@@ -22,15 +22,40 @@ public final class Database {
         public var text: String? { if case .text(let value) = self { value } else { nil } }
     }
 
+    /// One row of a query's result, read by column position or name.
+    public struct Row: Equatable, Sendable {
+        public let values: [Value]
+        /// Column names, shared by every row of a result.
+        public let columns: [String]
+
+        public init(values: [Value], columns: [String]) {
+            self.values = values
+            self.columns = columns
+        }
+
+        public subscript(index: Int) -> Value {
+            values.indices.contains(index) ? values[index] : .null
+        }
+
+        /// The value of the column named `column`; `.null` when there's no such column.
+        public subscript(column: String) -> Value {
+            columns.firstIndex(of: column).map { self[$0] } ?? .null
+        }
+    }
+
     public struct Error: Swift.Error, CustomStringConvertible {
         public let description: String
     }
 
-    /// `~/Library/Application Support/<bundle ID>/<name>.db`.
+    /// `~/Library/Application Support/<bundle ID>/`, where every database lives. Plugins
+    /// keep their other files (such as images) in folders here too.
+    public static var directory: URL {
+        URL.applicationSupportDirectory.appending(path: Bundle.main.bundleIdentifier ?? "dev.swiftcast.app")
+    }
+
+    /// `<directory>/<name>.db`.
     public static func url(named name: String) -> URL {
-        URL.applicationSupportDirectory
-            .appending(path: Bundle.main.bundleIdentifier ?? "dev.swiftcast.app")
-            .appending(path: "\(name).db")
+        directory.appending(path: "\(name).db")
     }
 
     /// Opens `<name>.db` under Application Support. Falls back to an in-memory database, so
@@ -48,6 +73,8 @@ public final class Database {
     /// owners only ever append to their list.
     private let migrations: [String]
     private let db: OpaquePointer
+    /// A statement failed inside the current `transaction`, which then rolls back.
+    private var transactionFailed = false
 
     public convenience init(url: URL, migrations: [String]) throws {
         try FileManager.default.createDirectory(
@@ -81,7 +108,12 @@ public final class Database {
     }
 
     var userVersion: Int {
-        Int(rows("PRAGMA user_version").first?.first?.int ?? 0)
+        Int(rows("PRAGMA user_version").first?[0].int ?? 0)
+    }
+
+    /// The rowid of the last row inserted through this connection.
+    public var lastInsertRowID: Int64 {
+        sqlite3_last_insert_rowid(db)
     }
 
     private func migrate() throws {
@@ -108,19 +140,27 @@ public final class Database {
         }
     }
 
-    /// Runs a statement that returns no rows. Failures are logged: callers keep their
-    /// in-memory state, so a failed write costs persistence, not the feature.
-    public func execute(_ sql: String, _ bindings: [Value] = []) {
-        _ = rows(sql, bindings)
+    /// Runs a statement that returns no rows, and returns whether it succeeded. Failures are
+    /// logged: callers keep their in-memory state, so a failed write costs persistence, not
+    /// the feature.
+    @discardableResult
+    public func execute(_ sql: String, _ bindings: [Value] = []) -> Bool {
+        run(sql, bindings) != nil
     }
 
-    /// Runs a statement and returns every row it produces.
+    /// Runs a statement and returns every row it produces. On an error it logs and returns
+    /// no rows, and an enclosing `transaction` rolls back.
     @discardableResult
-    public func rows(_ sql: String, _ bindings: [Value] = []) -> [[Value]] {
+    public func rows(_ sql: String, _ bindings: [Value] = []) -> [Row] {
+        run(sql, bindings) ?? []
+    }
+
+    /// The statement's rows, or `nil` when it failed.
+    private func run(_ sql: String, _ bindings: [Value]) -> [Row]? {
         var statement: OpaquePointer?
         guard sqlite3_prepare_v2(db, sql, -1, &statement, nil) == SQLITE_OK else {
-            log(sql)
-            return []
+            fail(sql)
+            return nil
         }
         defer { sqlite3_finalize(statement) }
 
@@ -134,35 +174,52 @@ public final class Database {
             }
         }
 
-        var result: [[Value]] = []
+        let count = sqlite3_column_count(statement)
+        let columns = (0..<count).map { String(cString: sqlite3_column_name(statement, $0)) }
+        var result: [Row] = []
         while true {
             switch sqlite3_step(statement) {
             case SQLITE_ROW:
-                result.append((0..<sqlite3_column_count(statement)).map { column in
+                result.append(Row(values: (0..<count).map { column in
                     switch sqlite3_column_type(statement, column) {
                     case SQLITE_INTEGER: .int(sqlite3_column_int64(statement, column))
                     case SQLITE_FLOAT: .double(sqlite3_column_double(statement, column))
                     case SQLITE_TEXT: .text(String(cString: sqlite3_column_text(statement, column)))
                     default: .null
                     }
-                })
+                }, columns: columns))
             case SQLITE_DONE:
                 return result
             default:
-                log(sql)
-                return result
+                fail(sql)
+                return nil
             }
         }
     }
 
-    /// Runs `body` in one transaction, so its writes land together and cost one sync.
-    public func transaction(_ body: () -> Void) {
+    /// Runs `body` in one transaction, so its writes land together and cost one sync. Rolls
+    /// back if `body` throws or any statement in it fails, and returns whether it committed.
+    @discardableResult
+    public func transaction(_ body: () throws -> Void) rethrows -> Bool {
         execute("BEGIN")
-        body()
+        transactionFailed = false
+        do {
+            try body()
+        } catch {
+            execute("ROLLBACK")
+            throw error
+        }
+        guard !transactionFailed else {
+            transactionFailed = false
+            execute("ROLLBACK")
+            return false
+        }
         execute("COMMIT")
+        return !transactionFailed
     }
 
-    private func log(_ sql: String) {
+    private func fail(_ sql: String) {
+        transactionFailed = true
         NSLog("SwiftCast: SQLite error \(String(cString: sqlite3_errmsg(db))) in: \(sql)")
     }
 

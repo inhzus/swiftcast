@@ -47,7 +47,7 @@ final class ClipboardStore {
         self.database = database
         self.imageDirectory = imageDirectory
         maxItems = database.rows("SELECT value FROM settings WHERE key = 'max_items'")
-            .first?.first?.int.map(Int.init) ?? Self.defaultMaxItems
+            .first?["value"].int.map(Int.init) ?? Self.defaultMaxItems
         entries = database.rows("""
             SELECT id, kind, text, image_file, width, height, hash, copied_at FROM entries
             ORDER BY copied_at DESC, id DESC
@@ -95,7 +95,7 @@ final class ClipboardStore {
                 """, [.text(file), .int(Int64(width)), .int(Int64(height)), .text(hash),
                       .double(now.timeIntervalSince1970)])
         }
-        let id = database.rows("SELECT id FROM entries WHERE hash = ?", [.text(hash)]).first?.first?.int ?? 0
+        let id = database.lastInsertRowID
         entries.insert(Entry(id: id, content: content, hash: hash, copiedAt: now), at: 0)
         prune()
     }
@@ -125,17 +125,17 @@ final class ClipboardStore {
         }
     }
 
-    private static func entry(from row: [Database.Value]) -> Entry? {
-        guard let id = row[0].int, let kind = row[1].text, let hash = row[6].text,
-              let copiedAt = row[7].double else { return nil }
+    private static func entry(from row: Database.Row) -> Entry? {
+        guard let id = row["id"].int, let kind = row["kind"].text, let hash = row["hash"].text,
+              let copiedAt = row["copied_at"].double else { return nil }
         let content: Entry.Content
         switch kind {
         case "text":
-            guard let text = row[2].text else { return nil }
+            guard let text = row["text"].text else { return nil }
             content = .text(text)
         case "image":
-            guard let file = row[3].text else { return nil }
-            content = .image(file: file, width: Int(row[4].int ?? 0), height: Int(row[5].int ?? 0))
+            guard let file = row["image_file"].text else { return nil }
+            content = .image(file: file, width: Int(row["width"].int ?? 0), height: Int(row["height"].int ?? 0))
         default:
             return nil
         }
