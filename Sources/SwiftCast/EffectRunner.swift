@@ -1,10 +1,11 @@
 import AppKit
+import SwiftCastCore
 import SwiftCastPluginKit
 
 /// Carries out the effects plugins ask for.
 @MainActor
-enum EffectRunner {
-    static func run(_ effect: Effect) {
+struct EffectRunner: EffectPerforming {
+    func perform(_ effect: Effect) {
         switch effect {
         case .openApplication(let url):
             NSWorkspace.shared.openApplication(
