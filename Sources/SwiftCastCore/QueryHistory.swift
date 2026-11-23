@@ -17,7 +17,7 @@ public final class QueryHistory {
         entries = database.rows(
             "SELECT query FROM query_history ORDER BY last_used DESC, rowid DESC LIMIT ?",
             [.int(Int64(Self.limit))]
-        ).compactMap { $0[0].text }
+        ).compactMap { $0["query"].text }
     }
 
     /// Moves `query` to the front, dropping an earlier copy. Blank queries are ignored.

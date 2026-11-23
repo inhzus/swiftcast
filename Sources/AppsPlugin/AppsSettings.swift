@@ -26,6 +26,6 @@ final class AppsSettings {
     init(database: Database) {
         self.database = database
         extraFolders = database.rows("SELECT path FROM search_folders ORDER BY position")
-            .compactMap { $0[0].text.map { URL(filePath: $0) } }
+            .compactMap { $0["path"].text.map { URL(filePath: $0) } }
     }
 }

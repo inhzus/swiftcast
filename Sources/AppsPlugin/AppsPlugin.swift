@@ -60,7 +60,8 @@ public final class AppsPlugin: LauncherPlugin {
     func handOverLaunches(to context: PluginContext) {
         var launches: [UsageRecord] = []
         for row in database.rows("SELECT app_id, count, last_used FROM launches") {
-            guard let id = row[0].text, let count = row[1].int, let lastUsed = row[2].double else { continue }
+            guard let id = row["app_id"].text, let count = row["count"].int, let lastUsed = row["last_used"].double
+            else { continue }
             launches.append(UsageRecord(id: id, count: Int(count), lastUsed: Date(timeIntervalSince1970: lastUsed)))
         }
         guard !launches.isEmpty else { return }

@@ -37,10 +37,9 @@ public final class ClipboardPlugin: LauncherPlugin {
     private let relativeTime = RelativeDateTimeFormatter()
 
     public convenience init() {
-        let url = Database.url(named: "clipboard")
         self.init(
             database: .open("clipboard", migrations: Self.migrations),
-            imageDirectory: url.deletingLastPathComponent().appending(path: "clipboard"))
+            imageDirectory: Database.directory.appending(path: "clipboard"))
     }
 
     init(database: Database, imageDirectory: URL) {
