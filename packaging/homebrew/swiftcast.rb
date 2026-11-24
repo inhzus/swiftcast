@@ -21,7 +21,10 @@ cask "swiftcast" do
         writable_paths: ["{{appdir}}/SwiftCast.app"]
   end
 
-  uninstall quit: "dev.swiftcast.app"
+  uninstall quit: "io.zunish.swiftcast"
 
-  zap trash: "~/Library/Preferences/dev.swiftcast.app.plist"
+  zap trash: [
+    "~/Library/Application Support/io.zunish.swiftcast",
+    "~/Library/Preferences/io.zunish.swiftcast.plist",
+  ]
 end

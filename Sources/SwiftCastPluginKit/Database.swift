@@ -50,7 +50,7 @@ public final class Database {
     /// `~/Library/Application Support/<bundle ID>/`, where every database lives. Plugins
     /// keep their other files (such as images) in folders here too.
     public static var directory: URL {
-        URL.applicationSupportDirectory.appending(path: Bundle.main.bundleIdentifier ?? "dev.swiftcast.app")
+        URL.applicationSupportDirectory.appending(path: Bundle.main.bundleIdentifier ?? "io.zunish.swiftcast")
     }
 
     /// `<directory>/<name>.db`.
