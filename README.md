@@ -74,4 +74,4 @@ See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for building, architecture and re
 
 ## License
 
-[MIT](LICENSE)
+[Apache License 2.0](LICENSE)
