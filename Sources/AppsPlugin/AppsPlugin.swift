@@ -129,8 +129,11 @@ public final class AppsPlugin: LauncherPlugin {
         isIndexing = true
         needsReindex = false
         let indexer = AppIndexer(roots: AppIndexer.defaultRoots + settings.extraFolders)
+        let start = ContinuousClock.now
         let apps = await Task.detached(priority: .utility) { indexer.scan() }.value
         if apps != engine.apps {
+            Log.info("indexed \(apps.count) apps from \(indexer.roots.count) folders in \(Log.milliseconds(since: start)) ms",
+                     category: "apps")
             engine.update(apps: apps)
             context?.resultsDidChange()
         }

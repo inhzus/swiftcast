@@ -38,6 +38,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        let info = Bundle.main.infoDictionary
+        let version = info?["CFBundleShortVersionString"] as? String ?? "dev"
+        let build = info?["CFBundleVersion"] as? String ?? "?"
+        Log.info("SwiftCast \(version) (\(build)) started on macOS \(ProcessInfo.processInfo.operatingSystemVersionString)",
+                 category: "app")
         PerfLog.start()
         panel.onSettings = { [weak self] in self?.showSettings() }
         hotKeys.onToggle = { [weak self] in self?.panel.toggle() }
@@ -53,6 +58,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if CommandLine.arguments.contains("--settings") {
             showSettings()
         }
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        Log.info("quitting", category: "app")
+        Log.file.flush()
     }
 
     /// Opening the app again (e.g. `open -a SwiftCast`, or from Finder) shows the panel.
@@ -77,7 +87,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         host.onResultsChange = { [weak self] in self?.pluginResultsChanged() }
         settings.onPluginsChange = { [weak self] in self?.pluginsToggled() }
         Task {
+            let start = ContinuousClock.now
             await host.start()
+            let enabled = host.enabledPlugins.map(\.id).joined(separator: ", ")
+            Log.info("plugins ready in \(Log.milliseconds(since: start)) ms: \(enabled)", category: "plugins")
             model.refresh()
             await preloadIcons()
             panel.prewarm()
@@ -86,6 +99,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// A plugin was turned on or off in Settings.
     private func pluginsToggled() {
+        let disabled = settings.disabledPlugins.sorted()
+        Log.info("disabled plugins: \(disabled.isEmpty ? "none" : disabled.joined(separator: ", "))", category: "plugins")
         host.setDisabled(settings.disabledPlugins)
         if let view = model.openView, !host.isEnabled(view) { model.closeView() }
         hotKeys.registerViewHotKeys()

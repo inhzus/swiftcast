@@ -13,6 +13,13 @@ open build/SwiftCast.app --args --show
 `--show` opens the launcher at startup and `--settings` opens Settings. Set
 `SWIFTCAST_PERF=1` to log open and keystroke latency to stderr.
 
+The app logs info and errors (`Log` in `SwiftCastPluginKit`) to
+`~/Library/Application Support/io.zunish.swiftcast/Logs/swiftcast.log`, rolled at 1 MB with
+the three older files kept as `swiftcast.1.log` to `swiftcast.3.log`; Settings → About shows it
+in Finder. The same lines go to the unified log:
+`log stream --predicate 'subsystem == "io.zunish.swiftcast"'`. Never log what the user types or
+copies.
+
 The icon is drawn by `scripts/make-icon.swift`; run `scripts/make-icon.sh` to regenerate
 `Resources/AppIcon.icns`.
 

@@ -64,7 +64,7 @@ public final class Database {
         do {
             return try Database(url: url(named: name), migrations: migrations)
         } catch {
-            NSLog("SwiftCast: can't open \(name).db (\(error)); changes won't be saved")
+            Log.error("can't open \(name).db (\(error)); changes won't be saved", category: "db")
             return inMemory(migrations: migrations)
         }
     }
@@ -100,7 +100,11 @@ public final class Database {
         }
         db = handle
         execute("PRAGMA journal_mode = WAL")
+        let before = userVersion
         try migrate()
+        if path != ":memory:", userVersion != before {
+            Log.info("\((path as NSString).lastPathComponent) migrated v\(before) → v\(userVersion)", category: "db")
+        }
     }
 
     deinit {
@@ -220,7 +224,7 @@ public final class Database {
 
     private func fail(_ sql: String) {
         transactionFailed = true
-        NSLog("SwiftCast: SQLite error \(String(cString: sqlite3_errmsg(db))) in: \(sql)")
+        Log.error("SQLite error \(String(cString: sqlite3_errmsg(db))) in: \(sql)", category: "db")
     }
 
     /// Tells SQLite to copy bound text, since Swift's temporary C string doesn't outlive the call.

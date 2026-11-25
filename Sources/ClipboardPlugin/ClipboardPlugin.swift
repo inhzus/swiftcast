@@ -50,10 +50,12 @@ public final class ClipboardPlugin: LauncherPlugin {
     public func activate(_ context: PluginContext) async {
         self.context = context
         monitor.start()
+        Log.info("watching the pasteboard; \(store.entries.count) entries kept", category: "clipboard")
     }
 
     public func deactivate() {
         monitor.stop()
+        Log.info("stopped watching the pasteboard", category: "clipboard")
     }
 
     // MARK: - Results

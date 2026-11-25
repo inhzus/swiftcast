@@ -83,7 +83,7 @@ final class ClipboardStore {
                     try png.write(to: url, options: .atomic)
                 }
             } catch {
-                NSLog("SwiftCast: can't save copied image (\(error))")
+                Log.error("can't save copied image (\(error))", category: "clipboard")
                 return nil
             }
             let (width, height) = size(of: png)

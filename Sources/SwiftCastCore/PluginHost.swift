@@ -48,7 +48,9 @@ public final class PluginHost {
     /// Activates the enabled plugins that aren't active yet.
     public func activateEnabled() async {
         for plugin in enabledPlugins where activatedIDs.insert(plugin.id).inserted {
+            let start = ContinuousClock.now
             await plugin.activate(context(for: plugin))
+            Log.info("activated \(plugin.id) in \(Log.milliseconds(since: start)) ms", category: "plugins")
         }
     }
 
@@ -59,6 +61,7 @@ public final class PluginHost {
         for plugin in plugins where ids.contains(plugin.id) && activatedIDs.contains(plugin.id) {
             plugin.deactivate()
             activatedIDs.remove(plugin.id)
+            Log.info("deactivated \(plugin.id)", category: "plugins")
         }
     }
 

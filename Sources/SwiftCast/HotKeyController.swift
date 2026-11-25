@@ -28,8 +28,10 @@ final class HotKeyController {
 
     /// Registers the saved shortcuts.
     func start() {
-        if !registerHotKey(settings.shortcut) {
-            NSLog("SwiftCast: failed to register \(settings.shortcut.displayString) hotkey (already in use?)")
+        if registerHotKey(settings.shortcut) {
+            Log.info("registered \(settings.shortcut.displayString) to open SwiftCast", category: "hotkey")
+        } else {
+            Log.error("can't register \(settings.shortcut.displayString) to open SwiftCast (already in use?)", category: "hotkey")
         }
         registerViewHotKeys()
     }
@@ -51,9 +53,11 @@ final class HotKeyController {
         if let conflict = conflict(of: shortcut, for: .launcher) { return conflict }
         guard registerHotKey(shortcut) else {
             registerHotKey(settings.shortcut)
+            Log.error("can't change the launcher shortcut to \(shortcut.displayString) (already in use)", category: "hotkey")
             return "\(shortcut.displayString) is already used by another app."
         }
         settings.shortcut = shortcut
+        Log.info("launcher shortcut changed to \(shortcut.displayString)", category: "hotkey")
         return nil
     }
 
@@ -69,6 +73,8 @@ final class HotKeyController {
             if let shortcut {
                 guard let hotKey = makeViewHotKey(shortcut, for: plugin) else {
                     viewHotKeys[pluginID] = settings.viewShortcut(for: plugin).flatMap { makeViewHotKey($0, for: plugin) }
+                    Log.error("can't change the \(pluginID) view shortcut to \(shortcut.displayString) (already in use)",
+                              category: "hotkey")
                     return "\(shortcut.displayString) is already used by another app."
                 }
                 viewHotKeys[pluginID] = hotKey
@@ -76,6 +82,7 @@ final class HotKeyController {
         }
         // `.some`: assigning a bare `nil` would remove the entry, bringing back the default.
         settings.viewShortcuts[pluginID] = .some(shortcut)
+        Log.info("\(pluginID) view shortcut changed to \(shortcut?.displayString ?? "none")", category: "hotkey")
         updateShortcutHints()
         return nil
     }
@@ -88,7 +95,8 @@ final class HotKeyController {
             if let hotKey = makeViewHotKey(shortcut, for: plugin) {
                 viewHotKeys[plugin.id] = hotKey
             } else {
-                NSLog("SwiftCast: failed to register \(shortcut.displayString) hotkey (already in use?)")
+                Log.error("can't register \(shortcut.displayString) to open the \(plugin.id) view (already in use?)",
+                          category: "hotkey")
             }
         }
         updateShortcutHints()

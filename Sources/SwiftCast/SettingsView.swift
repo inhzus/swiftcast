@@ -165,6 +165,9 @@ struct SettingsView {
                 LabeledContent("Source code") {
                     Link("github.com/inhzus/swiftcast", destination: URL(string: "https://github.com/inhzus/swiftcast")!)
                 }
+                LabeledContent("Logs") {
+                    Button("Show in Finder") { showLogs() }
+                }
             }
         }
         .formStyle(.grouped)
@@ -247,10 +250,23 @@ struct SettingsView {
         do {
             if enabled { try service.register() } else { try service.unregister() }
             state.loginError = nil
+            Log.info("launch at login turned \(enabled ? "on" : "off")", category: "settings")
         } catch {
             state.loginError = error.localizedDescription
+            Log.error("can't turn launch at login \(enabled ? "on" : "off") (\(error))", category: "settings")
         }
         state.launchAtLogin = service.status == .enabled
+    }
+
+    /// Reveals the log file, or its folder before anything was logged.
+    private func showLogs() {
+        Log.file.flush()
+        let file = Log.file.currentURL
+        if FileManager.default.fileExists(atPath: file.path) {
+            NSWorkspace.shared.activateFileViewerSelecting([file])
+        } else {
+            NSWorkspace.shared.open(Log.file.directory.deletingLastPathComponent())
+        }
     }
 
     /// Choices for how long a closed panel keeps its search.
