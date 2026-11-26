@@ -11,6 +11,7 @@ struct LauncherViewModelTests {
     let effects = RecordingEffects()
     let history: QueryHistory
     let usage: UsageStore
+    let stats: UsageStats
     let host: PluginHost
     let model: LauncherViewModel
 
@@ -18,7 +19,8 @@ struct LauncherViewModelTests {
         history = QueryHistory(database: database)
         usage = UsageStore(database: database)
         host = PluginHost(plugins: [first, second], usage: usage)
-        model = LauncherViewModel(host: host, history: history, usage: usage, effects: effects)
+        stats = UsageStats(database: database)
+        model = LauncherViewModel(host: host, history: history, usage: usage, stats: stats, effects: effects)
     }
 
     private var shownIDs: [String] { model.items.map(\.result.id) }
@@ -109,6 +111,36 @@ struct LauncherViewModelTests {
         #expect(second.log == ["didPerform Copy entry"])
         #expect(usage.isEmpty)
         #expect(history.entries.isEmpty)
+    }
+
+    @Test func actionsCountTowardStatisticsInSearchAndInViews() {
+        first.results = [row("a")]
+        second.viewRows = [row("entry")]
+        model.userEdited("a")
+        model.performPrimary()
+        model.open(second)
+        model.performSecondary()
+        #expect(stats.topPlugins(in: .today).map(\.id) == ["first", "second"])
+        // Neither fake keeps item statistics.
+        #expect(stats.topItems(pluginID: "first", in: .all).isEmpty)
+        #expect(stats.topItems(pluginID: "second", in: .all).isEmpty)
+    }
+
+    @Test func itemStatisticsOnlyForPluginsThatKeepThem() {
+        first.tracksItemStatistics = true
+        first.results = [ResultItem(id: "app", title: "App", icon: .file("/Applications/App.app"),
+                                    actions: [ResultAction("Open", .copy("app"))], match: .prefix)]
+        model.userEdited("a")
+        model.performPrimary()
+        #expect(stats.topItems(pluginID: "first", in: .today)
+            == [UsageStats.ItemCount(id: "app", title: "App", iconPath: "/Applications/App.app", count: 1)])
+    }
+
+    @Test func openingAViewIsNotCounted() {
+        second.results = [row("open", actions: [ResultAction("Open", .openView)])]
+        model.userEdited("op")
+        model.performPrimary()
+        #expect(stats.topPlugins(in: .all).isEmpty)
     }
 
     @Test func viewShortcutLabelsOnlyTheRowThatOpensTheView() {

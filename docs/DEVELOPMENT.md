@@ -49,8 +49,10 @@ plugin can't import the app or another plugin.
 - **Settings.** Each plugin gets a page with an on/off switch, plus the sections it describes
   in `settingsSections()`; the app draws them. A disabled plugin is never asked for results.
 - **Data.** Each plugin keeps its data in its own SQLite file under
-  `~/Library/Application Support/io.zunish.swiftcast/`, and the app keeps search history and
-  usage in `swiftcast.db`. App-wide settings live in `UserDefaults`.
+  `~/Library/Application Support/io.zunish.swiftcast/`, and the app keeps search history,
+  usage and daily usage statistics (shown on the Statistics page in Settings) in
+  `swiftcast.db`. A plugin opts in to per-row statistics with `tracksItemStatistics`; every
+  plugin's total is counted. App-wide settings live in `UserDefaults`.
 
 To add a plugin, create a target that depends on `SwiftCastPluginKit`, implement
 `LauncherPlugin`, and list it in `Sources/SwiftCast/PluginRegistry.swift`. Units for quick

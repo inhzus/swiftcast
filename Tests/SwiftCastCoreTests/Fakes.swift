@@ -12,6 +12,7 @@ final class FakePlugin: LauncherPlugin {
     let sectionTitle: String
     let resultLimit: Int
     var viewTitle: String?
+    var tracksItemStatistics = false
 
     /// Rows for any non-blank query, unless `resultsByQuery` has the query.
     var results: [ResultItem] = []

@@ -16,11 +16,13 @@ struct SettingsActions {
     var setViewShortcut: (Shortcut?, String) -> String?
     var clearSearchHistory: () -> Void
     var clearUsage: () -> Void
+    var clearStatistics: () -> Void
 }
 
 /// A page in the Settings sidebar.
 enum SettingsPage: Hashable {
     case general
+    case statistics
     case plugin(String)
 }
 
@@ -50,9 +52,12 @@ struct SettingsView {
     @Bindable var settings: AppSettings
     /// Each gets a page, in registry order.
     let plugins: [any LauncherPlugin]
+    /// Read by the Statistics page.
+    let stats: UsageStats
     let actions: SettingsActions
     @Bindable private var state = SettingsViewState()
     @Bindable private var pluginState = PluginSettingsState()
+    @Bindable private var statisticsState = StatisticsSettingsState()
 
     var sidebar: some View {
         List(selection: $state.page) {
@@ -62,6 +67,12 @@ struct SettingsView {
                 IconTile(icon: .symbol("gearshape.fill"), tint: .gray, size: 22)
             }
             .tag(SettingsPage.general)
+            Label {
+                Text("Statistics")
+            } icon: {
+                IconTile(icon: .symbol("chart.bar.fill"), tint: .orange, size: 22)
+            }
+            .tag(SettingsPage.statistics)
             Section("Plugins") {
                 ForEach(plugins.indices, id: \.self) { index in
                     let plugin = plugins[index]
@@ -83,6 +94,9 @@ struct SettingsView {
         switch state.page ?? .general {
         case .general:
             generalPage
+        case .statistics:
+            StatisticsSettingsView(plugins: plugins, stats: stats, state: statisticsState,
+                                   tint: Self.tint(for:), clear: actions.clearStatistics)
         case .plugin(let id):
             if let plugin = plugins.first(where: { $0.id == id }) {
                 pluginPage(plugin)
@@ -94,6 +108,7 @@ struct SettingsView {
     var title: String {
         switch state.page ?? .general {
         case .general: "General"
+        case .statistics: "Statistics"
         case .plugin(let id): plugins.first { $0.id == id }?.name ?? "Settings"
         }
     }

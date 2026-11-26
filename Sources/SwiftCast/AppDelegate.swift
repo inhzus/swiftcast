@@ -11,17 +11,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let database = Database.open("swiftcast", migrations: AppDatabase.migrations)
     private lazy var queryHistory = QueryHistory(database: database)
     private lazy var usage = UsageStore(database: database)
+    private lazy var stats = UsageStats(database: database)
     private lazy var host = PluginHost(
         plugins: PluginRegistry.makePlugins(), disabledIDs: settings.disabledPlugins, usage: usage)
     private lazy var model: LauncherViewModel = {
-        let model = LauncherViewModel(host: host, history: queryHistory, usage: usage, effects: EffectRunner())
+        let model = LauncherViewModel(host: host, history: queryHistory, usage: usage, stats: stats,
+                                      effects: EffectRunner())
         model.measure = { name, body in PerfLog.measure(name, body) }
         return model
     }()
     private lazy var panel = PanelController(settings: settings, host: host, model: model)
     private lazy var hotKeys = HotKeyController(settings: settings, host: host, model: model)
     private lazy var settingsWindow = SettingsWindowController { [unowned self] in
-        SettingsView(settings: settings, plugins: host.plugins, actions: SettingsActions(
+        SettingsView(settings: settings, plugins: host.plugins, stats: stats, actions: SettingsActions(
             setShortcut: { [unowned self] in hotKeys.setShortcut($0) },
             setRecording: { [unowned self] in hotKeys.setRecording($0) },
             setViewShortcut: { [unowned self] in hotKeys.setViewShortcut($0, for: $1) },
@@ -32,7 +34,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             clearUsage: { [unowned self] in
                 usage.clear()
                 model.refresh()
-            }
+            },
+            clearStatistics: { [unowned self] in stats.clear() }
         ))
     }
     private var statusItem: NSStatusItem?
