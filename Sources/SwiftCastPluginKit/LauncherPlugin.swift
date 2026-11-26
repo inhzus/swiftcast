@@ -200,6 +200,11 @@ public enum Effect: Hashable, Sendable {
     case copy(String)
     /// Copies the PNG image file at this URL.
     case copyImage(URL)
+    /// Copies `text`, then pastes it into the app in front (⌘V). Needs Accessibility access;
+    /// without it, only copies.
+    case paste(String)
+    /// Copies the PNG image file at this URL, then pastes it like `paste`.
+    case pasteImage(URL)
     /// Shows the plugin's own view (`viewResults(for:)`) in the panel, with an empty search.
     /// Esc goes back.
     case openView
