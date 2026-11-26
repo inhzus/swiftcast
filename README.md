@@ -13,13 +13,14 @@
 </p>
 
 Press a shortcut, type a few letters, press ↩. SwiftCast is built for latency, has no
-dependencies, and needs no special permissions.
+dependencies, and needs no special permissions, except Accessibility access to paste from
+clipboard history.
 
 ## Features
 
 - **Apps.** Fuzzy search by prefix, initials (`vsc` → Visual Studio Code) or scattered letters.
 - **Quick math.** Arithmetic, percentages, functions and unit conversions.
-- **Clipboard history.** Text and images you copy, searchable; open it with ⌃⌥⇧⌘C.
+- **Clipboard history.** Text and images you copy, searchable; open it with ⌃⌥⇧⌘C. ↩ pastes into the app you're in, ⌘↩ just copies.
 - **Learns what you pick.** Results you choose often rise to the top, across all features.
 - **Search history.** ↑/↓ in an empty field steps through past searches.
 
@@ -62,8 +63,8 @@ SwiftCast's Settings.
 
 | Key | Action |
 | --- | --- |
-| ↩ | Open app · copy result · open clipboard history |
-| ⌘↩ | Show app in Finder |
+| ↩ | Open app · copy result · open clipboard history · paste clipboard entry |
+| ⌘↩ | Show app in Finder · copy clipboard entry |
 | ↑ ↓ | Move selection; in an empty field, browse past searches |
 | ⌘, | Settings: shortcuts, search folders, features on/off |
 | esc | Back · close |

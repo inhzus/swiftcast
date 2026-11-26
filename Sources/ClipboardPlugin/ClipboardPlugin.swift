@@ -2,14 +2,14 @@ import Foundation
 import SwiftCastPluginKit
 
 /// Clipboard history: keeps the text and images the user copies. Typing "clip" offers a row
-/// that opens the history, where ↩ copies an entry again.
+/// that opens the history, where ↩ pastes an entry into the app in front and ⌘↩ copies it.
 ///
 /// Keeps the history in its own database, `clipboard.db`, with images as PNG files beside it.
 @MainActor
 public final class ClipboardPlugin: LauncherPlugin {
     public let id = "clipboard"
     public let name = "Clipboard History"
-    public let summary = "Keeps the text and images you copy; type “clip” to browse and copy them again."
+    public let summary = "Keeps the text and images you copy; type “clip” to browse them; ↩ pastes, ⌘↩ copies."
     public let icon = ResultIcon.symbol("doc.on.clipboard")
     public let sectionTitle = "Clipboard"
     public let viewTitle: String? = "Clipboard History"
@@ -103,7 +103,7 @@ public final class ClipboardPlugin: LauncherPlugin {
                 id: String(entry.id),
                 title: Self.title(for: text),
                 icon: .symbol("doc.text"),
-                actions: [ResultAction("Copy", .copy(text))],
+                actions: [ResultAction("Paste", .paste(text)), ResultAction("Copy", .copy(text))],
                 preview: .text(text),
                 previewDetail: "\(count) character\(count == 1 ? "" : "s") · Copied \(age)")
         case .image(let file, let width, let height):
@@ -112,7 +112,7 @@ public final class ClipboardPlugin: LauncherPlugin {
                 id: String(entry.id),
                 title: "Image \(width)×\(height)",
                 icon: .symbol("photo"),
-                actions: [ResultAction("Copy", .copyImage(url))],
+                actions: [ResultAction("Paste", .pasteImage(url)), ResultAction("Copy", .copyImage(url))],
                 preview: .image(url),
                 previewDetail: "\(width)×\(height) · Copied \(age)")
         }

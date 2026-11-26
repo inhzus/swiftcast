@@ -154,10 +154,13 @@ struct ClipboardPluginTests {
         plugin.add(.text("\n  Hello world  \nsecond line"))
         let rows = plugin.viewResults(for: "")
         #expect(rows.map(\.title) == ["Hello world", "Image 4×2"])
-        #expect(rows[0].actions == [ResultAction("Copy", .copy("\n  Hello world  \nsecond line"))])
+        #expect(rows[0].actions == [
+            ResultAction("Paste", .paste("\n  Hello world  \nsecond line")),
+            ResultAction("Copy", .copy("\n  Hello world  \nsecond line")),
+        ])
         #expect(rows[0].preview == .text("\n  Hello world  \nsecond line"))
         let url = try #require({ if case .image(let url) = rows[1].preview { url } else { nil } }())
-        #expect(rows[1].actions == [ResultAction("Copy", .copyImage(url))])
+        #expect(rows[1].actions == [ResultAction("Paste", .pasteImage(url)), ResultAction("Copy", .copyImage(url))])
         #expect(FileManager.default.fileExists(atPath: url.path))
 
         #expect(plugin.viewResults(for: "SECOND").map(\.title) == ["Hello world"])
