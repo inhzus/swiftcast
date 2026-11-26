@@ -13,6 +13,7 @@ public final class AppsPlugin: LauncherPlugin {
     public let icon = ResultIcon.symbol("square.grid.2x2")
     public let sectionTitle = "Applications"
     public let resultLimit = 20
+    public let tracksItemStatistics = true
 
     /// Rescans on panel open only when the last scan is older than this.
     static let rescanInterval: TimeInterval = 60

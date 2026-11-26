@@ -54,13 +54,16 @@ public final class LauncherViewModel {
 
     private let history: QueryHistory
     private let usage: UsageStore
+    private let stats: UsageStats
     private let effects: any EffectPerforming
     private var historyCursor = HistoryCursor()
 
-    public init(host: PluginHost, history: QueryHistory, usage: UsageStore, effects: any EffectPerforming) {
+    public init(host: PluginHost, history: QueryHistory, usage: UsageStore, stats: UsageStats,
+                effects: any EffectPerforming) {
         self.host = host
         self.history = history
         self.usage = usage
+        self.stats = stats
         self.effects = effects
         itemLimit = host.plugins.map(\.resultLimit).reduce(0, +)
     }
@@ -176,7 +179,10 @@ public final class LauncherViewModel {
             // Hide first so the panel disappears without waiting on the effect or on saving.
             onDismiss()
             effects.perform(action.effect)
-            self.plugin(for: item)?.didPerform(action, on: item.result)
+            if let plugin = self.plugin(for: item) {
+                plugin.didPerform(action, on: item.result)
+                stats.record(item.result, from: plugin)
+            }
         }
         guard inSearch else { return }
         usage.increment(UsageStore.Key(pluginID: item.pluginID, itemID: item.result.id))

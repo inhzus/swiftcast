@@ -29,6 +29,10 @@ public protocol LauncherPlugin: AnyObject {
     /// Global shortcut that opens the plugin's view, until the user changes it in Settings.
     /// `nil` for none.
     var defaultViewShortcut: Shortcut? { get }
+    /// Whether the app counts each row's daily use, with its title and icon, for the
+    /// Statistics page; every plugin's total use is counted either way. Leave it off when
+    /// rows hold what the user typed or copied, since their titles would be stored.
+    var tracksItemStatistics: Bool { get }
 
     /// Called once, at launch or when the plugin is first enabled. Loads whatever the plugin
     /// needs (an index, say); at launch the app prewarms the panel after every enabled plugin
@@ -62,6 +66,7 @@ public protocol LauncherPlugin: AnyObject {
 public extension LauncherPlugin {
     var viewTitle: String? { nil }
     var defaultViewShortcut: Shortcut? { nil }
+    var tracksItemStatistics: Bool { false }
     func activate(_ context: PluginContext) async {}
     func viewResults(for query: String) -> [ResultItem] { [] }
     func deactivate() {}

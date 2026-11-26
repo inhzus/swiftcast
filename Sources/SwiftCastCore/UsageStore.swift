@@ -3,6 +3,7 @@ import SwiftCastPluginKit
 
 /// Persists how often and how recently the user picked each row, from any plugin, to rank the
 /// rows they reach for now first (frecency). Old picks fade with a one-week half-life.
+/// Counts only actions run in search. The Statistics page reads `UsageStats` instead.
 @MainActor
 public final class UsageStore {
     /// A row: the plugin it came from and its ID there.
