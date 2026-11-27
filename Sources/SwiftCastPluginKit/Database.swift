@@ -2,8 +2,11 @@ import Foundation
 import SQLite3
 
 /// A SQLite database file with its own schema. Each plugin opens its own, named after its
-/// `id`, and owns its tables and migrations; the app keeps its search history in another.
-/// App-wide settings stay in `UserDefaults`.
+/// `id`, and owns its tables; the app keeps its search history in another. App-wide settings
+/// stay in `UserDefaults`.
+///
+/// There are no migrations: the schema is applied on every open, so it must only use
+/// `CREATE … IF NOT EXISTS`. After changing a table, delete the `.db` to start over.
 public final class Database {
     public enum Value: Equatable, Sendable {
         case int(Int64)
@@ -47,50 +50,46 @@ public final class Database {
         public let description: String
     }
 
-    /// `~/Library/Application Support/<bundle ID>/`, where every database lives. Plugins
-    /// keep their other files (such as images) in folders here too.
+    /// `~/Library/Application Support/<bundle ID>/`, the app's data folder. Databases live in
+    /// its `db` folder; plugins keep their other files (such as images) in folders here too.
     public static var directory: URL {
         URL.applicationSupportDirectory.appending(path: Bundle.main.bundleIdentifier ?? "io.zunish.swiftcast")
     }
 
-    /// `<directory>/<name>.db`.
+    /// `<directory>/db/<name>.db`.
     public static func url(named name: String) -> URL {
-        directory.appending(path: "\(name).db")
+        directory.appending(path: "db/\(name).db")
     }
 
-    /// Opens `<name>.db` under Application Support. Falls back to an in-memory database, so
-    /// its owner still works without saving.
-    public static func open(_ name: String, migrations: [String]) -> Database {
+    /// Opens `url(named: name)`. Falls back to an in-memory database, so its owner still works
+    /// without saving.
+    public static func open(_ name: String, schema: String) -> Database {
         do {
-            return try Database(url: url(named: name), migrations: migrations)
+            return try Database(url: url(named: name), schema: schema)
         } catch {
             Log.error("can't open \(name).db (\(error)); changes won't be saved", category: "db")
-            return inMemory(migrations: migrations)
+            return inMemory(schema: schema)
         }
     }
 
-    /// Schema changes, applied in order. `PRAGMA user_version` records how many have run, so
-    /// owners only ever append to their list.
-    private let migrations: [String]
     private let db: OpaquePointer
     /// A statement failed inside the current `transaction`, which then rolls back.
     private var transactionFailed = false
 
-    public convenience init(url: URL, migrations: [String]) throws {
+    public convenience init(url: URL, schema: String) throws {
         try FileManager.default.createDirectory(
             at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-        try self.init(path: url.path, migrations: migrations)
+        try self.init(path: url.path, schema: schema)
     }
 
     /// A database that lives only as long as this object: for tests, and as a fallback when
     /// the file can't be opened.
-    public static func inMemory(migrations: [String]) -> Database {
+    public static func inMemory(schema: String) -> Database {
         // Opening an in-memory database only fails when SQLite can't allocate memory.
-        try! Database(path: ":memory:", migrations: migrations)
+        try! Database(path: ":memory:", schema: schema)
     }
 
-    private init(path: String, migrations: [String]) throws {
-        self.migrations = migrations
+    private init(path: String, schema: String) throws {
         var handle: OpaquePointer?
         let flags = SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE
         guard sqlite3_open_v2(path, &handle, flags, nil) == SQLITE_OK, let handle else {
@@ -100,19 +99,11 @@ public final class Database {
         }
         db = handle
         execute("PRAGMA journal_mode = WAL")
-        let before = userVersion
-        try migrate()
-        if path != ":memory:", userVersion != before {
-            Log.info("\((path as NSString).lastPathComponent) migrated v\(before) → v\(userVersion)", category: "db")
-        }
+        try apply(schema)
     }
 
     deinit {
         sqlite3_close(db)
-    }
-
-    var userVersion: Int {
-        Int(rows("PRAGMA user_version").first?[0].int ?? 0)
     }
 
     /// The rowid of the last row inserted through this connection.
@@ -120,17 +111,15 @@ public final class Database {
         sqlite3_last_insert_rowid(db)
     }
 
-    private func migrate() throws {
-        for (index, sql) in migrations.enumerated() where index >= userVersion {
-            try exec("BEGIN")
-            do {
-                try exec(sql)
-                try exec("PRAGMA user_version = \(index + 1)")
-                try exec("COMMIT")
-            } catch {
-                try? exec("ROLLBACK")
-                throw error
-            }
+    /// Creates whatever tables of `schema` don't exist yet, all or none.
+    private func apply(_ schema: String) throws {
+        try exec("BEGIN")
+        do {
+            try exec(schema)
+            try exec("COMMIT")
+        } catch {
+            try? exec("ROLLBACK")
+            throw error
         }
     }
 

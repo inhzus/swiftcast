@@ -12,7 +12,7 @@ struct ClipboardStoreTests {
 
     /// A fresh connection to the same file each call, so reads after reopening come from disk.
     private func store() -> ClipboardStore {
-        let database = try! Database(url: folder.appending(path: "clipboard.db"), migrations: ClipboardPlugin.migrations)
+        let database = try! Database(url: folder.appending(path: "clipboard.db"), schema: ClipboardPlugin.schema)
         return ClipboardStore(database: database, imageDirectory: images)
     }
 
@@ -122,7 +122,7 @@ struct ClipboardStoreTests {
 struct ClipboardPluginTests {
     private func makePlugin() -> ClipboardPlugin {
         ClipboardPlugin(
-            database: .inMemory(migrations: ClipboardPlugin.migrations),
+            database: .inMemory(schema: ClipboardPlugin.schema),
             imageDirectory: FileManager.default.temporaryDirectory.appending(path: "SwiftCastTests-\(UUID().uuidString)"))
     }
 

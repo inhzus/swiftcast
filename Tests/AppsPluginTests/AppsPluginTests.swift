@@ -6,7 +6,7 @@ import Testing
 @MainActor
 struct AppsPluginTests {
     private func makePlugin(_ apps: [AppEntry]) -> AppsPlugin {
-        let plugin = AppsPlugin(database: .inMemory(migrations: AppsPlugin.migrations))
+        let plugin = AppsPlugin(database: .inMemory(schema: AppsPlugin.schema))
         plugin.engine.update(apps: apps)
         return plugin
     }
@@ -44,7 +44,7 @@ struct AppsPluginTests {
     }
 
     @Test func handsOverOldLaunchesOnce() {
-        let database = Database.inMemory(migrations: AppsPlugin.migrations)
+        let database = Database.inMemory(schema: AppsPlugin.schema)
         let lastUsed = Date(timeIntervalSince1970: 1_000_000)
         database.execute("INSERT INTO launches (app_id, count, last_used) VALUES ('com.apple.Safari', 3, ?)",
                          [.double(lastUsed.timeIntervalSince1970)])
@@ -59,13 +59,13 @@ struct AppsPluginTests {
     @Test func settingsListDefaultAndAddedFolders() throws {
         let url = FileManager.default.temporaryDirectory
             .appending(path: "SwiftCastTests-\(UUID().uuidString)/apps.db")
-        let plugin = AppsPlugin(database: try Database(url: url, migrations: AppsPlugin.migrations))
+        let plugin = AppsPlugin(database: try Database(url: url, schema: AppsPlugin.schema))
         let extra = URL(filePath: "/tmp/MoreApps")
         // A default root and a repeat are dropped.
         plugin.setSetting("searchFolders", to: .folders([extra, AppIndexer.defaultRoots[0], extra]))
         #expect(plugin.settings.extraFolders == [extra])
 
-        let reopened = AppsPlugin(database: try Database(url: url, migrations: AppsPlugin.migrations))
+        let reopened = AppsPlugin(database: try Database(url: url, schema: AppsPlugin.schema))
         #expect(reopened.settingsSections().first?.rows.first?.control == .folders(
             fixed: AppIndexer.defaultRoots, editable: [extra], addPrompt: "Choose folders to search for apps"))
     }

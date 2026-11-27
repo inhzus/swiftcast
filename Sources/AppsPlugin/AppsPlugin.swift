@@ -26,18 +26,17 @@ public final class AppsPlugin: LauncherPlugin {
     private var needsReindex = false
     private var lastIndexed: Date?
 
-    /// Schema of `apps.db`; only ever append.
-    static let migrations = [
+    /// Schema of `apps.db`.
+    static let schema = """
+        CREATE TABLE IF NOT EXISTS search_folders (path TEXT PRIMARY KEY, position INTEGER NOT NULL);
+        CREATE TABLE IF NOT EXISTS launches (
+            app_id TEXT PRIMARY KEY, count INTEGER NOT NULL, last_used REAL NOT NULL);
         """
-        CREATE TABLE search_folders (path TEXT PRIMARY KEY, position INTEGER NOT NULL);
-        CREATE TABLE launches (app_id TEXT PRIMARY KEY, count INTEGER NOT NULL, last_used REAL NOT NULL);
-        """,
-    ]
 
     let database: Database
 
     public convenience init() {
-        self.init(database: .open("apps", migrations: Self.migrations))
+        self.init(database: .open("apps", schema: Self.schema))
     }
 
     init(database: Database) {

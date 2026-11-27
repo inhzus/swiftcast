@@ -5,37 +5,33 @@ import Testing
 struct DatabaseTests {
     private let url = FileManager.default.temporaryDirectory
         .appending(path: "SwiftCastTests-\(UUID().uuidString)/test.db")
-    private let migrations = ["CREATE TABLE items (name TEXT PRIMARY KEY, count INTEGER, score REAL)"]
+    private let schema = "CREATE TABLE IF NOT EXISTS items (name TEXT PRIMARY KEY, count INTEGER, score REAL)"
 
-    @Test func migratesToTheLatestVersion() throws {
-        let database = try Database(url: url, migrations: migrations)
-        #expect(database.userVersion == migrations.count)
-        // Reopening doesn't rerun migrations, which would fail on existing tables.
-        #expect(try Database(url: url, migrations: migrations).userVersion == migrations.count)
+    @Test func reopeningKeepsRows() throws {
+        try Database(url: url, schema: schema).execute("INSERT INTO items (name) VALUES ('a')")
+        // Reapplying the schema to an existing file leaves its tables as they are.
+        let rows = try Database(url: url, schema: schema).rows("SELECT name FROM items").map(\.values)
+        #expect(rows == [[.text("a")]])
     }
 
-    @Test func runsOnlyAppendedMigrations() throws {
-        try Database(url: url, migrations: migrations).execute("INSERT INTO items (name) VALUES ('a')")
-        let later = migrations + ["ALTER TABLE items ADD COLUMN note TEXT"]
-        let database = try Database(url: url, migrations: later)
-        #expect(database.userVersion == later.count)
-        #expect(database.rows("SELECT name, note FROM items").map(\.values) == [[.text("a"), .null]])
+    @Test func badSchemaFailsToOpen() {
+        #expect(throws: Database.Error.self) { try Database(url: url, schema: "CREATE TABLE") }
     }
 
     @Test func valuesRoundTripThroughTheFile() throws {
-        try Database(url: url, migrations: migrations).execute(
+        try Database(url: url, schema: schema).execute(
             "INSERT INTO items (name, count, score) VALUES (?, ?, ?)",
             [.text("com.apple.Safari"), .int(3), .double(1.5)])
-        let rows = try Database(url: url, migrations: migrations).rows("SELECT name, count, score FROM items").map(\.values)
+        let rows = try Database(url: url, schema: schema).rows("SELECT name, count, score FROM items").map(\.values)
         #expect(rows == [[.text("com.apple.Safari"), .int(3), .double(1.5)]])
     }
 
     @Test func badStatementsReturnNoRows() {
-        #expect(Database.inMemory(migrations: []).rows("SELECT * FROM missing").isEmpty)
+        #expect(Database.inMemory(schema: "").rows("SELECT * FROM missing").isEmpty)
     }
 
     @Test func readsColumnsByName() {
-        let database = Database.inMemory(migrations: migrations)
+        let database = Database.inMemory(schema: schema)
         database.execute("INSERT INTO items (name, count) VALUES ('a', 2)")
         let row = database.rows("SELECT name, count FROM items")[0]
         #expect(row["name"] == .text("a"))
@@ -46,7 +42,7 @@ struct DatabaseTests {
     }
 
     @Test func reportsTheInsertedRowID() {
-        let database = Database.inMemory(migrations: ["CREATE TABLE things (id INTEGER PRIMARY KEY, name TEXT)"])
+        let database = Database.inMemory(schema: "CREATE TABLE things (id INTEGER PRIMARY KEY, name TEXT)")
         #expect(database.execute("INSERT INTO things (name) VALUES ('a')"))
         #expect(database.lastInsertRowID == 1)
         database.execute("INSERT INTO things (name) VALUES ('b')")
@@ -55,7 +51,7 @@ struct DatabaseTests {
     }
 
     @Test func transactionRollsBackWhenAStatementFails() {
-        let database = Database.inMemory(migrations: migrations)
+        let database = Database.inMemory(schema: schema)
         let committed = database.transaction {
             database.execute("INSERT INTO items (name) VALUES ('a')")
             database.execute("INSERT INTO items (name) VALUES ('a')")  // duplicate key
@@ -68,7 +64,7 @@ struct DatabaseTests {
 
     @Test func transactionRollsBackWhenTheBodyThrows() {
         struct Stop: Error {}
-        let database = Database.inMemory(migrations: migrations)
+        let database = Database.inMemory(schema: schema)
         #expect(throws: Stop.self) {
             try database.transaction {
                 database.execute("INSERT INTO items (name) VALUES ('a')")

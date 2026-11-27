@@ -7,7 +7,7 @@ import Testing
 struct LauncherViewModelTests {
     let first = FakePlugin(id: "first", resultLimit: 2)
     let second = FakePlugin(id: "second", viewTitle: "Second View")
-    let database = Database.inMemory(migrations: AppDatabase.migrations)
+    let database = Database.inMemory(schema: AppDatabase.schema)
     let effects = RecordingEffects()
     let history: QueryHistory
     let usage: UsageStore

@@ -19,7 +19,7 @@ struct UsageStatsTests {
 
     /// A fresh connection to the same file each call, so reads after reopening come from disk.
     private func stats() -> UsageStats {
-        UsageStats(database: try! Database(url: url, migrations: AppDatabase.migrations), calendar: calendar)
+        UsageStats(database: try! Database(url: url, schema: AppDatabase.schema), calendar: calendar)
     }
 
     private func daysAgo(_ days: Int) -> Date {
