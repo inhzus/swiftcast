@@ -9,7 +9,7 @@ struct QueryHistoryTests {
         .appending(path: "SwiftCastTests-\(UUID().uuidString)/swiftcast.db")
 
     /// A fresh connection to the same file each call, so reads after reopening come from disk.
-    private func database() -> Database { try! Database(url: url, migrations: AppDatabase.migrations) }
+    private func database() -> Database { try! Database(url: url, schema: AppDatabase.schema) }
 
     @Test func recordsNewestFirstWithoutDuplicates() {
         let history = QueryHistory(database: database())

@@ -8,7 +8,7 @@ import SwiftCastPluginKit
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private let settings = AppSettings()
-    private let database = Database.open("swiftcast", migrations: AppDatabase.migrations)
+    private let database = Database.open("swiftcast", schema: AppDatabase.schema)
     private lazy var queryHistory = QueryHistory(database: database)
     private lazy var usage = UsageStore(database: database)
     private lazy var stats = UsageStats(database: database)

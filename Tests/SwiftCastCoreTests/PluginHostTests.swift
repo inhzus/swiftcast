@@ -7,7 +7,7 @@ import Testing
 struct PluginHostTests {
     let on = FakePlugin(id: "on")
     let off = FakePlugin(id: "off")
-    let usage = UsageStore(database: .inMemory(migrations: AppDatabase.migrations))
+    let usage = UsageStore(database: .inMemory(schema: AppDatabase.schema))
     let host: PluginHost
 
     init() {

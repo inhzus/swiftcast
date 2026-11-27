@@ -21,15 +21,13 @@ public final class ClipboardPlugin: LauncherPlugin {
     /// Longest row title; the preview shows the rest.
     static let titleLength = 120
 
-    /// Schema of `clipboard.db`; only ever append.
-    static let migrations = [
-        """
-        CREATE TABLE entries (
+    /// Schema of `clipboard.db`.
+    static let schema = """
+        CREATE TABLE IF NOT EXISTS entries (
             id INTEGER PRIMARY KEY, kind TEXT NOT NULL, text TEXT, image_file TEXT,
             width INTEGER, height INTEGER, hash TEXT NOT NULL UNIQUE, copied_at REAL NOT NULL);
-        CREATE TABLE settings (key TEXT PRIMARY KEY, value INTEGER NOT NULL);
-        """,
-    ]
+        CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value INTEGER NOT NULL);
+        """
 
     let store: ClipboardStore
     private let monitor = ClipboardMonitor()
@@ -38,7 +36,7 @@ public final class ClipboardPlugin: LauncherPlugin {
 
     public convenience init() {
         self.init(
-            database: .open("clipboard", migrations: Self.migrations),
+            database: .open("clipboard", schema: Self.schema),
             imageDirectory: Database.directory.appending(path: "clipboard"))
     }
 
