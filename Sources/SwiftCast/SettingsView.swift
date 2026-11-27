@@ -140,6 +140,17 @@ struct SettingsView {
                         Text(choice.label).tag(choice.seconds)
                     }
                 }
+                Picker(selection: $settings.launcherInputSource) {
+                    Text("Don't change").tag(LauncherInputSource.unchanged)
+                    Text("Last used in launcher").tag(LauncherInputSource.lastUsed)
+                    Divider()
+                    ForEach(inputSourceOptions, id: \.id) { option in
+                        Text(option.title).tag(LauncherInputSource.fixed(option.id))
+                    }
+                } label: {
+                    Text("Input source")
+                    Text("What to type the search in while the launcher is open.")
+                }
                 // A closure, not `set: setLaunchAtLogin`: Swift 6.3 crashes emitting the
                 // reabstraction thunk for a method reference here.
                 Toggle("Launch at login", isOn: Binding(
@@ -194,6 +205,16 @@ struct SettingsView {
         } message: {
             Text("↑ and ↓ will have no past searches to step through.")
         }
+    }
+
+    /// The enabled input sources, plus the chosen one if it has since been turned off, so the
+    /// picker still shows it.
+    private var inputSourceOptions: [InputSourceSwitcher.Option] {
+        var options = InputSourceSwitcher.options()
+        if case .fixed(let chosen) = settings.launcherInputSource, !options.contains(where: { $0.id == chosen }) {
+            options.append(.init(id: chosen, title: chosen))
+        }
+        return options
     }
 
     private func pluginPage(_ plugin: any LauncherPlugin) -> some View {

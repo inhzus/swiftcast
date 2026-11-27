@@ -25,6 +25,16 @@ final class AppSettings {
         didSet { defaults.set(restoreInterval, forKey: "restoreInterval") }
     }
 
+    /// Which keyboard input source the launcher's search types in.
+    var launcherInputSource: LauncherInputSource {
+        didSet { save(launcherInputSource, forKey: "launcherInputSource") }
+    }
+
+    /// The input source (its TIS ID) the launcher was last closed with, for `.lastUsed`.
+    var lastLauncherInputSource: String? {
+        didSet { defaults.set(lastLauncherInputSource, forKey: "lastLauncherInputSource") }
+    }
+
     /// IDs of plugins the user turned off. Stored as the ones turned off so that a newly
     /// added plugin starts on.
     var disabledPlugins: Set<String> {
@@ -48,6 +58,9 @@ final class AppSettings {
         viewShortcuts = defaults.data(forKey: "viewShortcuts")
             .flatMap { try? JSONDecoder().decode([String: Shortcut?].self, from: $0) } ?? [:]
         restoreInterval = defaults.object(forKey: "restoreInterval") as? TimeInterval ?? 60
+        launcherInputSource = defaults.data(forKey: "launcherInputSource")
+            .flatMap { try? JSONDecoder().decode(LauncherInputSource.self, from: $0) } ?? .unchanged
+        lastLauncherInputSource = defaults.string(forKey: "lastLauncherInputSource")
         disabledPlugins = Set(defaults.stringArray(forKey: "disabledPlugins") ?? [])
         launcherPlacement = defaults.data(forKey: "launcherPlacement")
             .flatMap { try? JSONDecoder().decode(LauncherPlacement.self, from: $0) } ?? .default
@@ -69,4 +82,14 @@ final class AppSettings {
             defaults.set(data, forKey: key)
         }
     }
+}
+
+/// Which keyboard input source the launcher's search types in.
+enum LauncherInputSource: Codable, Hashable {
+    /// Whatever the user's app is using.
+    case unchanged
+    /// The one the launcher was last closed with.
+    case lastUsed
+    /// Always this one (a TIS input source ID).
+    case fixed(String)
 }
