@@ -56,6 +56,10 @@ brew install --cask inhzus/tap/swiftcast
 > or open it, then choose **Open Anyway** in System Settings → Privacy & Security.
 > The Homebrew cask does this for you.
 
+Releases are signed with the same certificate every time, so permissions you grant (like
+Accessibility) carry over when you update. Builds before the first one signed this way were
+ad-hoc signed, so updating from one of those asks for the grant one last time.
+
 ## Usage
 
 SwiftCast lives in the menu bar. Open it with **⌥Space**, or pick another shortcut in
