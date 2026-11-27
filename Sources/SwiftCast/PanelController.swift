@@ -14,6 +14,7 @@ final class PanelController: NSObject, NSWindowDelegate {
     private let model: LauncherViewModel
     private let launcher: LauncherViewController
     private let panel: LauncherPanel
+    private let inputSource = InputSourceSwitcher()
     /// When the panel was last hidden; a reopen soon after brings back the last search.
     private var lastHidden: Date?
     /// The panel is fading out; it's still visible until that finishes.
@@ -68,6 +69,14 @@ final class PanelController: NSObject, NSWindowDelegate {
         // activation round trip through the window server.
         isHiding = false
         PerfLog.measure("orderFront") { panel.makeKeyAndOrderFront(nil) }
+        let preferredSource: String?? = switch settings.launcherInputSource {
+        case .unchanged: nil
+        case .lastUsed: .some(settings.lastLauncherInputSource)
+        case .fixed(let id): .some(id)
+        }
+        if let preferredSource {
+            inputSource.begin(preferredID: preferredSource, in: launcher.searchField.currentEditor()?.inputContext)
+        }
         launcher.animateIn()
         DispatchQueue.main.async { [weak self] in
             for plugin in self?.host.enabledPlugins ?? [] { plugin.panelDidShow() }
@@ -80,6 +89,14 @@ final class PanelController: NSObject, NSWindowDelegate {
         guard panel.isVisible, !isHiding else { return }
         isHiding = true
         lastHidden = Date()
+        // Now rather than after the fade, so the user's app gets its source back at once.
+        if settings.launcherInputSource == .lastUsed {
+            if let used = inputSource.end(restoringUnlessChanged: false) {
+                settings.lastLauncherInputSource = used
+            }
+        } else {
+            inputSource.end(restoringUnlessChanged: true)
+        }
         launcher.animateOut { [weak self] in
             self?.panel.orderOut(nil)
             self?.isHiding = false
