@@ -74,9 +74,23 @@ a step:
 
 | Secret | Turns on |
 | --- | --- |
-| `MACOS_CERT_P12`, `MACOS_CERT_PASSWORD` | Developer ID signing (base64 of the `.p12` export) |
+| `MACOS_CERT_P12`, `MACOS_CERT_PASSWORD` | Signing with a Developer ID or the self-signed release certificate (base64 of the `.p12`, and its password) |
 | `NOTARY_KEY`, `NOTARY_KEY_ID`, `NOTARY_ISSUER_ID` | Notarization with an App Store Connect API key (contents of the `.p8`) |
 | `TAP_DEPLOY_KEY` | Pushing the updated cask to [`inhzus/homebrew-tap`](https://github.com/inhzus/homebrew-tap) (the private half of a deploy key with write access there) |
+
+### Signing
+
+Releases are signed with a self-signed certificate. Ad-hoc signatures change with every
+build, so macOS would ask users to grant Accessibility again after each update. A fixed
+certificate gives every release the same designated requirement, and the grant carries over.
+`scripts/make-signing-cert.sh` creates the certificate once and prints the commands that
+upload it as the secrets above. The certificate is kept in 1Password as "SwiftCast release
+signing certificate".
+
+Never commit the `.p12`. Anyone with its private key can sign a binary that macOS treats as
+SwiftCast and gives SwiftCast's permissions to. A new certificate makes every user re-grant
+once, so don't rotate it without a reason. Notarization still needs a Developer ID
+certificate.
 
 The cask template is [`packaging/homebrew/swiftcast.rb`](../packaging/homebrew/swiftcast.rb).
 Once releases are notarized, drop its `postflight_steps` block and the quarantine note in
